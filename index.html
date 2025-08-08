@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+    <meta charset="UTF-8">
+    <title>Kenteken Checker Prototype</title>
+</head>
+<body>
+    <h1>Kenteken Checker (Prototype)</h1>
+    <p>Typ een kenteken (zonder spaties, hoofdletters):</p>
+    <input type="text" id="kentekenInput" placeholder="Bijv: AB123C">
+    <button onclick="zoekKenteken()">Zoek</button>
+
+    <h2>Resultaat:</h2>
+    <pre id="resultaat"></pre>
+
+    <script>
+        async function zoekKenteken() {
+            const kenteken = document.getElementById('kentekenInput').value.trim().toUpperCase();
+            if (!kenteken) {
+                alert("Voer een kenteken in.");
+                return;
+            }
+
+            const url = `https://opendata.rdw.nl/resource/m9d7-ebf2.json?kenteken=${kenteken}`;
+
+            try {
+                const res = await fetch(url);
+                if (!res.ok) throw new Error("Netwerkfout of verkeerde API URL");
+                const data = await res.json();
+                if (data.length === 0) {
+                    document.getElementById('resultaat').textContent = "Geen gegevens gevonden.";
+                } else {
+                    document.getElementById('resultaat').textContent = JSON.stringify(data[0], null, 2);
+                }
+            } catch (err) {
+                document.getElementById('resultaat').textContent = "Fout: " + err.message;
+            }
+        }
+    </script>
+</body>
+</html>
