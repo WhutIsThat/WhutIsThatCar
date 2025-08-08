@@ -2,7 +2,7 @@
 <html lang="nl">
 <head>
   <meta charset="utf-8" />
-  <title>Kenteken Checker — Prototype</title>
+  <title>Kenteken Checker — Prototype (camera + OCR)</title>
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <style>
     :root { --accent: #0b66ff; --muted:#666; --card:#f8f9fb; --maxw:900px; }
@@ -22,6 +22,9 @@
     .value { font-weight:600; text-align:right; }
     pre.raw { background:#0f1724; color:#e6eefc; padding:12px; border-radius:8px; overflow:auto; font-size:0.85rem; }
     #status { color:var(--muted); font-size:0.95rem; margin-bottom:8px; }
+    video { width:100%; border-radius:8px; background:#000; max-height:360px; object-fit:cover; }
+    img.preview { max-width:100%; display:block; border-radius:8px; margin-top:8px; }
+    .mini { font-size:0.9rem; color:var(--muted) }
     @media (max-width:640px){ .grid { grid-template-columns: 1fr; } .row { flex-direction:column; align-items:flex-start } .value { text-align:left } header { flex-direction:column; align-items:flex-start } }
   </style>
 </head>
@@ -30,14 +33,32 @@
     <header>
       <div>
         <h1>Kenteken Checker — Prototype</h1>
-        <div class="lead">Voer een kenteken in (zonder spaties). Data uit RDW Open Data.</div>
+        <div class="lead">Gebruik foto of typ kenteken. Foto wordt lokaal in je browser verwerkt (NIET geüpload).</div>
       </div>
     </header>
 
+    <!-- Camera card -->
+    <div class="card">
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <button id="openCamBtn">Open camera</button>
+        <button id="captureBtn" class="secondary" disabled>Maak foto</button>
+        <button id="stopCamBtn" class="secondary" disabled>Stop camera</button>
+        <div style="margin-left:auto" class="mini">Let op: geef toestemming voor camera gebruik</div>
+      </div>
+
+      <div id="cameraArea" style="margin-top:10px; display:none">
+        <video id="video" playsinline autoplay></video>
+        <canvas id="camCanvas" style="display:none"></canvas>
+        <img id="photoPreview" class="preview" style="display:none" alt="preview">
+        <div style="margin-top:8px" class="mini">Na het maken van de foto zal de app proberen het kenteken te herkennen.</div>
+      </div>
+    </div>
+
+    <!-- Manual input card -->
     <div class="card">
       <div class="controls">
         <input id="kentekenInput" type="text" placeholder="Bijv: AB12CD" aria-label="kenteken">
-        <button id="zoekBtn">Zoek</button>
+        <button id="zoekBtn">Zoek (handmatig)</button>
         <button id="clearBtn" class="secondary">Reset</button>
         <button id="rawToggle" class="secondary">Toon raw JSON</button>
       </div>
@@ -45,7 +66,6 @@
     </div>
 
     <div id="resultArea">
-      <!-- Samenvatting kaart -->
       <div id="summary" class="card" style="display:none">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
           <div>
@@ -64,13 +84,11 @@
         <div class="grid" id="keyGrid"></div>
       </div>
 
-      <!-- Raw JSON -->
       <div id="raw" style="display:none" class="card">
         <div style="margin-bottom:8px" class="label">Raw RDW JSON (eerste entry)</div>
         <pre id="rawPre" class="raw">-</pre>
       </div>
 
-      <!-- Geen resultaat -->
       <div id="noResult" class="card" style="display:none">
         <strong>Geen gegevens gevonden</strong>
         <div class="small" style="margin-top:6px">Probeer een ander kenteken of controleer spelling.</div>
@@ -78,11 +96,23 @@
     </div>
 
     <footer style="margin-top:20px;color:var(--muted);font-size:0.9rem">
-      Prototype — alleen voor testen. Foto / OCR nog niet ingeschakeld in deze versie.
+      Prototype — voor testen. Foto / OCR gebeurt in je browser — NIET geüpload.
     </footer>
   </div>
 
+  <!-- Tesseract.js CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@4.0.2/dist/tesseract.min.js"></script>
+
 <script>
+  // --- UI elements ---
+  const openCamBtn = document.getElementById('openCamBtn');
+  const captureBtn = document.getElementById('captureBtn');
+  const stopCamBtn = document.getElementById('stopCamBtn');
+  const cameraArea = document.getElementById('cameraArea');
+  const videoEl = document.getElementById('video');
+  const camCanvas = document.getElementById('camCanvas');
+  const photoPreview = document.getElementById('photoPreview');
+
   const zoekBtn = document.getElementById('zoekBtn');
   const input = document.getElementById('kentekenInput');
   const status = document.getElementById('status');
@@ -98,107 +128,143 @@
   const rawToggle = document.getElementById('rawToggle');
   const clearBtn = document.getElementById('clearBtn');
 
+  let localStream = null;
+  let tesseractWorker = null;
+
+  // --- Helpers ---
   function setStatus(txt){ status.innerText = 'Status: ' + txt; }
-
-  function cleanPlate(p){
-    return p.replace(/[^A-Za-z0-9]/g,'').toUpperCase();
-  }
-
+  function cleanPlate(p){ return String(p||'').replace(/[^A-Za-z0-9]/g,'').toUpperCase(); }
   function formatDate(ymd){
     if(!ymd) return '';
     const s = String(ymd).trim();
-    // Accept YYYYMMDD or YYYY-MM-DD
-    if(/^\d{8}$/.test(s)){
-      const y=s.slice(0,4), m=s.slice(4,6), d=s.slice(6,8);
-      return `${d}-${m}-${y}`;
-    }
+    if(/^\d{8}$/.test(s)){ const y=s.slice(0,4), m=s.slice(4,6), d=s.slice(6,8); return `${d}-${m}-${y}`; }
     return s;
   }
-
   function getFirst(obj, keys){
-    for(const k of keys){
-      if(obj[k] !== undefined && obj[k] !== null && String(obj[k]).trim() !== '') return obj[k];
-    }
+    for(const k of keys){ if(obj[k] !== undefined && obj[k] !== null && String(obj[k]).trim() !== '') return obj[k]; }
     return '';
   }
 
-  const fieldMap = [
-    ['Merk', ['merk']],
-    ['Model', ['handelsbenaming','uitvoering','handelsbenaming_toevoeging']],
-    ['Uitvoering', ['uitvoering']],
-    ['Inrichting', ['inrichting']],
-    ['Kleur', ['eerste_kleur','tweede_kleur']],
-    ['Brandstof', ['brandstof_omschrijving','brandstof']],
-    ['Vermogen (kW)', ['vermogen','vermogen_pk','vermogen_kW']],
-    ['Massa (kg)', ['massa_ledig_voertuig','massa_rijklaar','toegestane_maximum_massa_voertuig']],
-    ['Aantal zitplaatsen', ['aantal_zitplaatsen']],
-    ['Aantal deuren', ['aantal_deuren']],
-    ['Catalogusprijs', ['catalogusprijs']],
-  ];
+  // --- RDW lookup (same as before) ---
+  async function lookupRDW(plate) {
+    const p = cleanPlate(plate);
+    if (!p) return null;
+    const url = `https://opendata.rdw.nl/resource/m9d7-ebf2.json?kenteken=${p}`;
+    const resp = await fetch(url);
+    if (!resp.ok) throw new Error('RDW error ' + resp.status);
+    const arr = await resp.json();
+    return arr; // array
+  }
 
-  async function zoekKenteken(){
-    const rawInput = input.value || '';
-    const kenteken = cleanPlate(rawInput);
-    if(!kenteken){ alert('Voer een kenteken in'); input.focus(); return; }
+  // --- Tesseract OCR on canvas ---
+  async function runOCRFromCanvas(canvas) {
+    // Use Tesseract.recognize directly for simplicity
+    setStatus('OCR verwerken (kan 5-25s duren) …');
+    // prefer english models but we only care alphanumeric; use whitelist
+    const dataUrl = canvas.toDataURL('image/jpeg', 0.9);
+    const res = await Tesseract.recognize(dataUrl, 'eng', {
+      tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 -',
+      preserve_interword_spaces: '0'
+    });
+    setStatus('OCR klaar');
+    return res.data ? res.data.text : '';
+  }
 
-    // reset UI
-    summary.style.display='none';
-    raw.style.display='none';
-    noResult.style.display='none';
-    keyGrid.innerHTML = '';
-    rawPre.textContent = '-';
-    setStatus('zoeken...');
+  // --- Extract plate candidates (same logic) ---
+  function extractPlateCandidates(text) {
+    if (!text) return [];
+    const cleaned = text.toUpperCase().replace(/[^A-Z0-9 \-\n]/g, ' ');
+    const tokens = cleaned.split(/[\s\n]+/).filter(Boolean);
+    const candidates = tokens.map(t => t.replace(/[^A-Z0-9]/g,'')).filter(t => t.length >= 4 && t.length <= 8);
+    return [...new Set(candidates)];
+  }
 
-    try{
-      const url = `https://opendata.rdw.nl/resource/m9d7-ebf2.json?kenteken=${kenteken}`;
-      const resp = await fetch(url);
-      if(!resp.ok) throw new Error('Netwerkfout: ' + resp.status);
-      const arr = await resp.json();
-      if(!arr || arr.length === 0){
-        setStatus('klaar');
-        noResult.style.display='block';
-        return;
-      }
-      const data = arr[0];
-
-      // Fill summary top
-      sKenteken.innerText = kenteken;
-      const merk = getFirst(data, ['merk']) || '';
-      const model = getFirst(data, ['handelsbenaming','uitvoering']) || '';
-      sMerkModel.innerText = (merk ? merk : '') + (merk && model ? ' • ' : '') + (model ? model : '');
-
-      sEerste.innerText = formatDate(getFirst(data, ['datum_eerste_toelating','datum_eerste_toelating_in_nederland','datum_eerste_toelating_in_nederland']));
-      sApk.innerText = formatDate(getFirst(data, ['vervaldatum_apk']));
-
-      // Fill grid with friendly fields
-      for(const [label, keys] of fieldMap){
-        const value = getFirst(data, keys);
-        if(value === '') continue;
-        const row = document.createElement('div');
-        row.className = 'row';
-        row.innerHTML = `<div class="label">${label}</div><div class="value">${value}</div>`;
-        keyGrid.appendChild(row);
-      }
-
-      // Show the summary
-      summary.style.display='block';
-      rawPre.textContent = JSON.stringify(data, null, 2);
-      setStatus('klaar');
-    }catch(err){
+  // --- Camera control functions ---
+  async function startCamera(){
+    try {
+      localStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false });
+      videoEl.srcObject = localStream;
+      cameraArea.style.display = 'block';
+      captureBtn.disabled = false;
+      stopCamBtn.disabled = false;
+      openCamBtn.disabled = true;
+      setStatus('Camera actief — maak een foto of typ een kenteken');
+      await videoEl.play();
+    } catch (err) {
       console.error(err);
-      setStatus('fout');
-      noResult.style.display='block';
-      noResult.innerHTML = '<strong>Fout bij ophalen data</strong><div style="margin-top:6px;color:#a00">'+ (err.message || err) +'</div>';
+      alert('Kon camera niet openen: ' + err.message);
+      setStatus('camera niet beschikbaar');
     }
   }
 
-  zoekBtn.addEventListener('click', zoekKenteken);
-  input.addEventListener('keydown', (e) => { if(e.key === 'Enter') zoekKenteken(); });
-  rawToggle.addEventListener('click', () => { raw.style.display = raw.style.display === 'none' ? 'block' : 'none'; });
-  clearBtn.addEventListener('click', () => {
-    input.value=''; summary.style.display='none'; raw.style.display='none'; noResult.style.display='none'; keyGrid.innerHTML=''; rawPre.textContent='-'; setStatus('klaar');
-  });
+  function stopCamera(){
+    try {
+      if(localStream){
+        localStream.getTracks().forEach(t => t.stop());
+        localStream = null;
+      }
+      videoEl.pause();
+      videoEl.srcObject = null;
+      cameraArea.style.display = 'none';
+      captureBtn.disabled = true;
+      stopCamBtn.disabled = true;
+      openCamBtn.disabled = false;
+      setStatus('Camera gestopt');
+    } catch (err) {
+      console.error(err);
+    }
+  }
 
-</script>
-</body>
-</html>
+  // --- Capture photo & process ---
+  async function capturePhotoAndProcess(){
+    if(!localStream) { alert('Camera is niet actief'); return; }
+    // set canvas size to video natural size
+    const w = videoEl.videoWidth || 1280;
+    const h = videoEl.videoHeight || 720;
+    camCanvas.width = w;
+    camCanvas.height = h;
+    const ctx = camCanvas.getContext('2d');
+    ctx.drawImage(videoEl, 0, 0, w, h);
+    // show preview
+    const dataUrl = camCanvas.toDataURL('image/jpeg', 0.9);
+    photoPreview.src = dataUrl;
+    photoPreview.style.display = 'block';
+    // Run OCR on canvas
+    try {
+      const text = await runOCRFromCanvas(camCanvas);
+      const candidates = extractPlateCandidates(text);
+      if(candidates.length === 0){
+        setStatus('Geen kenteken gevonden via OCR. Probeer close-up of ander beeld.');
+        alert('Kenteken niet herkend. Probeer dichterbij of andere belichting.');
+        return;
+      }
+      // Try RDW for each candidate
+      setStatus('Zoeken RDW voor OCR-kandidaten …');
+      let found = false;
+      for(const cand of candidates){
+        setStatus('Proberen: ' + cand);
+        try {
+          const rdw = await lookupRDW(cand);
+          if(rdw && rdw.length > 0){
+            displayResult(cand, rdw[0]);
+            found = true;
+            break;
+          }
+        } catch(err){
+          console.error('RDW fout', err);
+        }
+      }
+      if(!found){
+        setStatus('Geen RDW-match voor OCR-kandidaten');
+        alert('OCR gaf kandidaten: ' + candidates.join(', ') + '\nMaar geen RDW-data gevonden.');
+      }
+    } catch(err){
+      console.error(err);
+      setStatus('Fout tijdens OCR');
+      alert('Fout bij OCR: ' + err.message);
+    }
+  }
+
+  // --- Display RDW result in UI (reused logic) ---
+  const fieldMap = [
+    ['Merk',]()
