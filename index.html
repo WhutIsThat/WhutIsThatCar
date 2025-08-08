@@ -1,41 +1,204 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="nl">
 <head>
-    <meta charset="UTF-8">
-    <title>Kenteken Checker Prototype</title>
+  <meta charset="utf-8" />
+  <title>Kenteken Checker — Prototype</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <style>
+    :root { --accent: #0b66ff; --muted:#666; --card:#f8f9fb; --maxw:900px; }
+    body { font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial; margin:18px; color:#111; }
+    .wrap { max-width: var(--maxw); margin: 0 auto; }
+    header { display:flex; gap:12px; align-items:center; margin-bottom:18px; }
+    h1 { margin:0; font-size:1.6rem; }
+    .lead { color:var(--muted); font-size:0.95rem; margin-top:6px; }
+    .controls { display:flex; gap:8px; margin:12px 0 20px; flex-wrap:wrap; }
+    input[type=text] { padding:10px 12px; font-size:1rem; border:1px solid #ddd; border-radius:8px; min-width:220px; }
+    button { background:var(--accent); color:#fff; border:0; padding:10px 14px; border-radius:8px; cursor:pointer; font-weight:600; }
+    button.secondary { background:#fff; color:var(--accent); border:1px solid #d6e2ff; }
+    .card { background:var(--card); padding:14px; border-radius:12px; box-shadow: 0 1px 0 rgba(0,0,0,0.04); margin-bottom:14px; }
+    .grid { display:grid; grid-template-columns: 1fr 1fr; gap:10px; }
+    .row { display:flex; justify-content:space-between; gap:8px; padding:8px 10px; border-radius:8px; background:#fff; border:1px solid #eef2f6; align-items:center; }
+    .label { color:var(--muted); font-size:0.9rem; }
+    .value { font-weight:600; text-align:right; }
+    pre.raw { background:#0f1724; color:#e6eefc; padding:12px; border-radius:8px; overflow:auto; font-size:0.85rem; }
+    #status { color:var(--muted); font-size:0.95rem; margin-bottom:8px; }
+    @media (max-width:640px){ .grid { grid-template-columns: 1fr; } .row { flex-direction:column; align-items:flex-start } .value { text-align:left } header { flex-direction:column; align-items:flex-start } }
+  </style>
 </head>
 <body>
-    <h1>Kenteken Checker (Prototype)</h1>
-    <p>Typ een kenteken (zonder spaties, hoofdletters):</p>
-    <input type="text" id="kentekenInput" placeholder="Bijv: AB123C">
-    <button onclick="zoekKenteken()">Zoek</button>
+  <div class="wrap">
+    <header>
+      <div>
+        <h1>Kenteken Checker — Prototype</h1>
+        <div class="lead">Voer een kenteken in (zonder spaties). Data uit RDW Open Data.</div>
+      </div>
+    </header>
 
-    <h2>Resultaat:</h2>
-    <pre id="resultaat"></pre>
+    <div class="card">
+      <div class="controls">
+        <input id="kentekenInput" type="text" placeholder="Bijv: AB12CD" aria-label="kenteken">
+        <button id="zoekBtn">Zoek</button>
+        <button id="clearBtn" class="secondary">Reset</button>
+        <button id="rawToggle" class="secondary">Toon raw JSON</button>
+      </div>
+      <div id="status">Status: klaar</div>
+    </div>
 
-    <script>
-        async function zoekKenteken() {
-            const kenteken = document.getElementById('kentekenInput').value.trim().toUpperCase();
-            if (!kenteken) {
-                alert("Voer een kenteken in.");
-                return;
-            }
+    <div id="resultArea">
+      <!-- Samenvatting kaart -->
+      <div id="summary" class="card" style="display:none">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+          <div>
+            <div class="label">Kenteken</div>
+            <div style="font-size:1.2rem;font-weight:700" id="s-kenteken"></div>
+            <div class="label" id="s-merk-model" style="margin-top:6px"></div>
+          </div>
+          <div style="text-align:right">
+            <div class="label">Eerste toelating</div>
+            <div id="s-eerste" class="value"></div>
+            <div class="label" style="margin-top:6px">APK vervaldatum</div>
+            <div id="s-apk" class="value"></div>
+          </div>
+        </div>
 
-            const url = `https://opendata.rdw.nl/resource/m9d7-ebf2.json?kenteken=${kenteken}`;
+        <div class="grid" id="keyGrid"></div>
+      </div>
 
-            try {
-                const res = await fetch(url);
-                if (!res.ok) throw new Error("Netwerkfout of verkeerde API URL");
-                const data = await res.json();
-                if (data.length === 0) {
-                    document.getElementById('resultaat').textContent = "Geen gegevens gevonden.";
-                } else {
-                    document.getElementById('resultaat').textContent = JSON.stringify(data[0], null, 2);
-                }
-            } catch (err) {
-                document.getElementById('resultaat').textContent = "Fout: " + err.message;
-            }
-        }
-    </script>
+      <!-- Raw JSON -->
+      <div id="raw" style="display:none" class="card">
+        <div style="margin-bottom:8px" class="label">Raw RDW JSON (eerste entry)</div>
+        <pre id="rawPre" class="raw">-</pre>
+      </div>
+
+      <!-- Geen resultaat -->
+      <div id="noResult" class="card" style="display:none">
+        <strong>Geen gegevens gevonden</strong>
+        <div class="small" style="margin-top:6px">Probeer een ander kenteken of controleer spelling.</div>
+      </div>
+    </div>
+
+    <footer style="margin-top:20px;color:var(--muted);font-size:0.9rem">
+      Prototype — alleen voor testen. Foto / OCR nog niet ingeschakeld in deze versie.
+    </footer>
+  </div>
+
+<script>
+  const zoekBtn = document.getElementById('zoekBtn');
+  const input = document.getElementById('kentekenInput');
+  const status = document.getElementById('status');
+  const summary = document.getElementById('summary');
+  const keyGrid = document.getElementById('keyGrid');
+  const raw = document.getElementById('raw');
+  const rawPre = document.getElementById('rawPre');
+  const noResult = document.getElementById('noResult');
+  const sKenteken = document.getElementById('s-kenteken');
+  const sMerkModel = document.getElementById('s-merk-model');
+  const sEerste = document.getElementById('s-eerste');
+  const sApk = document.getElementById('s-apk');
+  const rawToggle = document.getElementById('rawToggle');
+  const clearBtn = document.getElementById('clearBtn');
+
+  function setStatus(txt){ status.innerText = 'Status: ' + txt; }
+
+  function cleanPlate(p){
+    return p.replace(/[^A-Za-z0-9]/g,'').toUpperCase();
+  }
+
+  function formatDate(ymd){
+    if(!ymd) return '';
+    const s = String(ymd).trim();
+    // Accept YYYYMMDD or YYYY-MM-DD
+    if(/^\d{8}$/.test(s)){
+      const y=s.slice(0,4), m=s.slice(4,6), d=s.slice(6,8);
+      return `${d}-${m}-${y}`;
+    }
+    return s;
+  }
+
+  function getFirst(obj, keys){
+    for(const k of keys){
+      if(obj[k] !== undefined && obj[k] !== null && String(obj[k]).trim() !== '') return obj[k];
+    }
+    return '';
+  }
+
+  const fieldMap = [
+    ['Merk', ['merk']],
+    ['Model', ['handelsbenaming','uitvoering','handelsbenaming_toevoeging']],
+    ['Uitvoering', ['uitvoering']],
+    ['Inrichting', ['inrichting']],
+    ['Kleur', ['eerste_kleur','tweede_kleur']],
+    ['Brandstof', ['brandstof_omschrijving','brandstof']],
+    ['Vermogen (kW)', ['vermogen','vermogen_pk','vermogen_kW']],
+    ['Massa (kg)', ['massa_ledig_voertuig','massa_rijklaar','toegestane_maximum_massa_voertuig']],
+    ['Aantal zitplaatsen', ['aantal_zitplaatsen']],
+    ['Aantal deuren', ['aantal_deuren']],
+    ['Catalogusprijs', ['catalogusprijs']],
+  ];
+
+  async function zoekKenteken(){
+    const rawInput = input.value || '';
+    const kenteken = cleanPlate(rawInput);
+    if(!kenteken){ alert('Voer een kenteken in'); input.focus(); return; }
+
+    // reset UI
+    summary.style.display='none';
+    raw.style.display='none';
+    noResult.style.display='none';
+    keyGrid.innerHTML = '';
+    rawPre.textContent = '-';
+    setStatus('zoeken...');
+
+    try{
+      const url = `https://opendata.rdw.nl/resource/m9d7-ebf2.json?kenteken=${kenteken}`;
+      const resp = await fetch(url);
+      if(!resp.ok) throw new Error('Netwerkfout: ' + resp.status);
+      const arr = await resp.json();
+      if(!arr || arr.length === 0){
+        setStatus('klaar');
+        noResult.style.display='block';
+        return;
+      }
+      const data = arr[0];
+
+      // Fill summary top
+      sKenteken.innerText = kenteken;
+      const merk = getFirst(data, ['merk']) || '';
+      const model = getFirst(data, ['handelsbenaming','uitvoering']) || '';
+      sMerkModel.innerText = (merk ? merk : '') + (merk && model ? ' • ' : '') + (model ? model : '');
+
+      sEerste.innerText = formatDate(getFirst(data, ['datum_eerste_toelating','datum_eerste_toelating_in_nederland','datum_eerste_toelating_in_nederland']));
+      sApk.innerText = formatDate(getFirst(data, ['vervaldatum_apk']));
+
+      // Fill grid with friendly fields
+      for(const [label, keys] of fieldMap){
+        const value = getFirst(data, keys);
+        if(value === '') continue;
+        const row = document.createElement('div');
+        row.className = 'row';
+        row.innerHTML = `<div class="label">${label}</div><div class="value">${value}</div>`;
+        keyGrid.appendChild(row);
+      }
+
+      // Show the summary
+      summary.style.display='block';
+      rawPre.textContent = JSON.stringify(data, null, 2);
+      setStatus('klaar');
+    }catch(err){
+      console.error(err);
+      setStatus('fout');
+      noResult.style.display='block';
+      noResult.innerHTML = '<strong>Fout bij ophalen data</strong><div style="margin-top:6px;color:#a00">'+ (err.message || err) +'</div>';
+    }
+  }
+
+  zoekBtn.addEventListener('click', zoekKenteken);
+  input.addEventListener('keydown', (e) => { if(e.key === 'Enter') zoekKenteken(); });
+  rawToggle.addEventListener('click', () => { raw.style.display = raw.style.display === 'none' ? 'block' : 'none'; });
+  clearBtn.addEventListener('click', () => {
+    input.value=''; summary.style.display='none'; raw.style.display='none'; noResult.style.display='none'; keyGrid.innerHTML=''; rawPre.textContent='-'; setStatus('klaar');
+  });
+
+</script>
 </body>
 </html>
