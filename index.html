@@ -2,351 +2,690 @@
 <html lang="nl">
 <head>
   <meta charset="utf-8" />
-  <title>Kenteken Checker — Prototype (camera + OCR)</title>
+  <title>Kenteken Checker — Auto Capture (Prototype)</title>
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <style>
-    :root { --accent: #0b66ff; --muted:#666; --card:#f8f9fb; --maxw:900px; }
-    body { font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial; margin:18px; color:#111; }
-    .wrap { max-width: var(--maxw); margin: 0 auto; }
-    header { display:flex; gap:12px; align-items:center; margin-bottom:18px; }
-    h1 { margin:0; font-size:1.6rem; }
-    .lead { color:var(--muted); font-size:0.95rem; margin-top:6px; }
-    .controls { display:flex; gap:8px; margin:12px 0 20px; flex-wrap:wrap; }
-    input[type=text] { padding:10px 12px; font-size:1rem; border:1px solid #ddd; border-radius:8px; min-width:220px; }
-    button { background:var(--accent); color:#fff; border:0; padding:10px 14px; border-radius:8px; cursor:pointer; font-weight:600; }
-    button.secondary { background:#fff; color:var(--accent); border:1px solid #d6e2ff; }
-    .card { background:var(--card); padding:14px; border-radius:12px; box-shadow: 0 1px 0 rgba(0,0,0,0.04); margin-bottom:14px; }
-    .grid { display:grid; grid-template-columns: 1fr 1fr; gap:10px; }
-    .row { display:flex; justify-content:space-between; gap:8px; padding:8px 10px; border-radius:8px; background:#fff; border:1px solid #eef2f6; align-items:center; }
-    .label { color:var(--muted); font-size:0.9rem; }
-    .value { font-weight:600; text-align:right; }
-    pre.raw { background:#0f1724; color:#e6eefc; padding:12px; border-radius:8px; overflow:auto; font-size:0.85rem; }
-    #status { color:var(--muted); font-size:0.95rem; margin-bottom:8px; }
-    video { width:100%; border-radius:8px; background:#000; max-height:360px; object-fit:cover; }
-    img.preview { max-width:100%; display:block; border-radius:8px; margin-top:8px; }
-    .mini { font-size:0.9rem; color:var(--muted) }
-    @media (max-width:640px){ .grid { grid-template-columns: 1fr; } .row { flex-direction:column; align-items:flex-start } .value { text-align:left } header { flex-direction:column; align-items:flex-start } }
+    :root{
+      --accent:#0b66ff; --muted:#6b7280; --bg:#f7fafc; --card:#ffffff;
+      --maxw:1100px;
+    }
+    html,body{height:100%; margin:0; font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial; background:var(--bg); color:#111}
+    .wrap{max-width:var(--maxw); margin:0 auto; padding:12px}
+    header{display:flex; gap:12px; align-items:center; margin-bottom:10px}
+    h1{margin:0; font-size:1.25rem}
+    .lead{color:var(--muted); font-size:0.95rem}
+
+    /* Fullscreen camera area */
+    #cameraFull {
+      position:fixed; inset:0; display:flex; align-items:center; justify-content:center;
+      background:#000; z-index:60; flex-direction:column;
+    }
+    #video{width:100%; height:100%; object-fit:cover;}
+    .overlay {
+      position:absolute; inset:0; pointer-events:none; display:flex; align-items:center; justify-content:center;
+    }
+    /* plate box */
+    .plate-box {
+      width:64%; max-width:780px; aspect-ratio:4/1; /* wide rectangle */
+      border: 3px dashed rgba(255,255,255,0.85);
+      box-shadow: 0 8px 30px rgba(0,0,0,0.6), inset 0 0 60px rgba(0,0,0,0.3);
+      background: linear-gradient(180deg, rgba(255,255,255,0.03), rgba(0,0,0,0.08));
+      border-radius:8px;
+      display:flex; align-items:center; justify-content:center;
+      color:#fff; font-weight:700; font-size:0.95rem; letter-spacing:0.04em;
+      text-align:center; padding:6px;
+    }
+    .overlay .hint { position:absolute; top:12px; left:12px; color:#fff; font-size:0.95rem; background:rgba(0,0,0,0.25); padding:6px 10px; border-radius:8px; }
+    .controls-floating {
+      position:absolute; bottom:18px; left:50%; transform:translateX(-50%); display:flex; gap:10px; z-index:80;
+    }
+    button{background:var(--accent); color:#fff; border:0; padding:10px 14px; border-radius:10px; font-weight:700; cursor:pointer}
+    button.secondary{background:#fff;color:var(--accent); border:1px solid rgba(11,102,255,0.12)}
+    button.ghost{background:transparent; color:#fff; border:1px solid rgba(255,255,255,0.18)}
+
+    /* Result page */
+    .result-panel{max-width:900px; margin:16px auto; background:var(--card); border-radius:12px; padding:18px; box-shadow:0 6px 18px rgba(17,24,39,0.06)}
+    .top-row{display:flex; gap:12px; align-items:center; justify-content:space-between; flex-wrap:wrap}
+    .plate-big{font-size:2.4rem; font-weight:900; letter-spacing:0.06em}
+    .meta{color:var(--muted)}
+    .primary-grid{display:grid; grid-template-columns: 1fr 1fr; gap:10px; margin-top:12px}
+    .prim { background:#f4f6fb; padding:12px; border-radius:8px }
+    .prim h3{margin:0;font-size:0.9rem;color:var(--muted)}
+    .prim .val{font-weight:800; font-size:1.05rem; margin-top:6px}
+
+    .other{margin-top:14px}
+    .other h4{margin:0 0 8px 0; color:var(--muted)}
+    .grid-rows{display:grid; gap:8px}
+    .row{display:flex; justify-content:space-between; background:#fff; border:1px solid #eef2f6; padding:10px; border-radius:8px}
+    .small-muted{color:var(--muted); font-size:0.9rem}
+
+    /* Fallback / manual input */
+    .manual{display:flex; gap:8px; align-items:center; margin-top:10px; flex-wrap:wrap}
+    input[type=text]{padding:10px 12px; border-radius:8px; border:1px solid #e6eefc; min-width:220px}
+    pre.raw{background:#0f1724;color:#e6eefc;padding:12px;border-radius:8px;overflow:auto;font-size:0.85rem}
+
+    /* responsive */
+    @media (max-width:720px){ .plate-box{width:86%} .primary-grid{grid-template-columns:1fr} .top-row{flex-direction:column; align-items:flex-start} }
   </style>
 </head>
 <body>
-  <div class="wrap">
+  <div id="cameraFull" aria-hidden="false">
+    <video id="video" playsinline autoplay muted></video>
+    <div class="overlay" aria-hidden="true">
+      <div class="plate-box" id="plateBox">Plaats het kenteken binnen het vak</div>
+      <div class="hint" id="hint">Automatisch: foto wordt genomen zodra het beeld stabiel is</div>
+    </div>
+
+    <div class="controls-floating" aria-hidden="true">
+      <button id="forceCapture" class="ghost">Maak foto nu</button>
+      <button id="cancelBtn" class="secondary">Annuleer</button>
+    </div>
+  </div>
+
+  <div class="wrap" style="display:none" id="appContent">
     <header>
       <div>
-        <h1>Kenteken Checker — Prototype</h1>
-        <div class="lead">Gebruik foto of typ kenteken. Foto wordt lokaal in je browser verwerkt (NIET geüpload).</div>
+        <h1>Kenteken Checker — Resultaat</h1>
+        <div class="lead">Foto is lokaal verwerkt. Geen uploads.</div>
       </div>
     </header>
 
-    <!-- Camera card -->
-    <div class="card">
-      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-        <button id="openCamBtn">Open camera</button>
-        <button id="captureBtn" class="secondary" disabled>Maak foto</button>
-        <button id="stopCamBtn" class="secondary" disabled>Stop camera</button>
-        <div style="margin-left:auto" class="mini">Let op: geef toestemming voor camera gebruik</div>
-      </div>
-
-      <div id="cameraArea" style="margin-top:10px; display:none">
-        <video id="video" playsinline autoplay></video>
-        <canvas id="camCanvas" style="display:none"></canvas>
-        <img id="photoPreview" class="preview" style="display:none" alt="preview">
-        <div style="margin-top:8px" class="mini">Na het maken van de foto zal de app proberen het kenteken te herkennen.</div>
-      </div>
-    </div>
-
-    <!-- Manual input card -->
-    <div class="card">
-      <div class="controls">
-        <input id="kentekenInput" type="text" placeholder="Bijv: AB12CD" aria-label="kenteken">
-        <button id="zoekBtn">Zoek (handmatig)</button>
-        <button id="clearBtn" class="secondary">Reset</button>
-        <button id="rawToggle" class="secondary">Toon raw JSON</button>
-      </div>
-      <div id="status">Status: klaar</div>
-    </div>
-
-    <div id="resultArea">
-      <div id="summary" class="card" style="display:none">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
-          <div>
-            <div class="label">Kenteken</div>
-            <div style="font-size:1.2rem;font-weight:700" id="s-kenteken"></div>
-            <div class="label" id="s-merk-model" style="margin-top:6px"></div>
-          </div>
-          <div style="text-align:right">
-            <div class="label">Eerste toelating</div>
-            <div id="s-eerste" class="value"></div>
-            <div class="label" style="margin-top:6px">APK vervaldatum</div>
-            <div id="s-apk" class="value"></div>
-          </div>
+    <div id="resultArea" class="result-panel" style="display:none">
+      <div class="top-row">
+        <div>
+          <div class="plate-big" id="r-kenteken">-</div>
+          <div class="meta" id="r-merkmodel">-</div>
         </div>
-
-        <div class="grid" id="keyGrid"></div>
+        <div style="text-align:right">
+          <div class="small-muted">Eerste toelating</div>
+          <div id="r-eerste" style="font-weight:800"></div>
+        </div>
       </div>
 
-      <div id="raw" style="display:none" class="card">
-        <div style="margin-bottom:8px" class="label">Raw RDW JSON (eerste entry)</div>
+      <div class="primary-grid">
+        <div class="prim">
+          <h3>Catalogusprijs</h3>
+          <div class="val" id="r-prijs">-</div>
+        </div>
+        <div class="prim">
+          <h3>Vermogen</h3>
+          <div class="val" id="r-vermogen">-</div>
+          <div class="small-muted" id="r-vermogen-extra"></div>
+        </div>
+      </div>
+
+      <div class="primary-grid" style="margin-top:10px">
+        <div class="prim">
+          <h3>Torque (Nm)</h3>
+          <div class="val" id="r-torque">-</div>
+        </div>
+        <div class="prim">
+          <h3>Massa / gewicht</h3>
+          <div class="val" id="r-gewicht">-</div>
+        </div>
+      </div>
+
+      <div class="other">
+        <h4>Extra informatie</h4>
+        <div class="grid-rows" id="r-extra"></div>
+      </div>
+
+      <div style="margin-top:12px">
+        <button id="retryBtn" class="secondary">Opnieuw foto maken</button>
+        <button id="manualBtn">Handmatig kenteken invullen</button>
+      </div>
+
+      <div id="rawBlock" style="margin-top:12px; display:none">
+        <div class="small-muted" style="margin-bottom:6px">Raw RDW JSON (eerste entry)</div>
         <pre id="rawPre" class="raw">-</pre>
       </div>
-
-      <div id="noResult" class="card" style="display:none">
-        <strong>Geen gegevens gevonden</strong>
-        <div class="small" style="margin-top:6px">Probeer een ander kenteken of controleer spelling.</div>
-      </div>
     </div>
 
-    <footer style="margin-top:20px;color:var(--muted);font-size:0.9rem">
-      Prototype — voor testen. Foto / OCR gebeurt in je browser — NIET geüpload.
-    </footer>
+    <div id="noResultArea" class="result-panel" style="display:none">
+      <h2>Herkennen niet gelukt</h2>
+      <div class="small-muted" style="margin-top:6px">Vul hieronder handmatig het kenteken in (bijv. AB12CD)</div>
+      <div class="manual">
+        <input id="manualInput" type="text" placeholder="Bijv: AB-12-CD">
+        <button id="manualSearch" class="secondary">Zoek</button>
+        <button id="manualRetry">Opnieuw foto</button>
+      </div>
+      <div id="manualMessage" style="margin-top:10px;color:#a00"></div>
+    </div>
+
   </div>
+
+  <!-- hidden canvases -->
+  <canvas id="captureCanvas" style="display:none"></canvas>
+  <canvas id="processCanvas" style="display:none"></canvas>
 
   <!-- Tesseract.js CDN -->
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@4.0.2/dist/tesseract.min.js"></script>
 
 <script>
-  // --- UI elements ---
-  const openCamBtn = document.getElementById('openCamBtn');
-  const captureBtn = document.getElementById('captureBtn');
-  const stopCamBtn = document.getElementById('stopCamBtn');
-  const cameraArea = document.getElementById('cameraArea');
-  const videoEl = document.getElementById('video');
-  const camCanvas = document.getElementById('camCanvas');
-  const photoPreview = document.getElementById('photoPreview');
+/* =========================
+   Auto-capture kenteken prototype
+   ========================= */
 
-  const zoekBtn = document.getElementById('zoekBtn');
-  const input = document.getElementById('kentekenInput');
-  const status = document.getElementById('status');
-  const summary = document.getElementById('summary');
-  const keyGrid = document.getElementById('keyGrid');
-  const raw = document.getElementById('raw');
-  const rawPre = document.getElementById('rawPre');
-  const noResult = document.getElementById('noResult');
-  const sKenteken = document.getElementById('s-kenteken');
-  const sMerkModel = document.getElementById('s-merk-model');
-  const sEerste = document.getElementById('s-eerste');
-  const sApk = document.getElementById('s-apk');
-  const rawToggle = document.getElementById('rawToggle');
-  const clearBtn = document.getElementById('clearBtn');
+const video = document.getElementById('video');
+const cameraFull = document.getElementById('cameraFull');
+const plateBox = document.getElementById('plateBox');
+const hint = document.getElementById('hint');
+const forceCapture = document.getElementById('forceCapture');
+const cancelBtn = document.getElementById('cancelBtn');
 
-  let localStream = null;
-  let tesseractWorker = null;
+const appContent = document.getElementById('appContent');
+const resultArea = document.getElementById('resultArea');
+const noResultArea = document.getElementById('noResultArea');
 
-  // --- Helpers ---
-  function setStatus(txt){ status.innerText = 'Status: ' + txt; }
-  function cleanPlate(p){ return String(p||'').replace(/[^A-Za-z0-9]/g,'').toUpperCase(); }
-  function formatDate(ymd){
-    if(!ymd) return '';
-    const s = String(ymd).trim();
-    if(/^\d{8}$/.test(s)){ const y=s.slice(0,4), m=s.slice(4,6), d=s.slice(6,8); return `${d}-${m}-${y}`; }
-    return s;
+const captureCanvas = document.getElementById('captureCanvas');
+const processCanvas = document.getElementById('processCanvas');
+
+const rKenteken = document.getElementById('r-kenteken');
+const rMerkModel = document.getElementById('r-merkmodel');
+const rEerste = document.getElementById('r-eerste');
+const rPrijs = document.getElementById('r-prijs');
+const rVermogen = document.getElementById('r-vermogen');
+const rVermogenExtra = document.getElementById('r-vermogen-extra');
+const rTorque = document.getElementById('r-torque');
+const rGewicht = document.getElementById('r-gewicht');
+const rExtra = document.getElementById('r-extra');
+const rawPre = document.getElementById('rawPre');
+const rawBlock = document.getElementById('rawBlock');
+
+const retryBtn = document.getElementById('retryBtn');
+const manualBtn = document.getElementById('manualBtn');
+const manualInput = document.getElementById('manualInput');
+const manualSearch = document.getElementById('manualSearch');
+const manualRetry = document.getElementById('manualRetry');
+const manualMessage = document.getElementById('manualMessage');
+
+let stream = null;
+let autoCaptureTimer = null;
+let lastFrameData = null;
+let stableFrames = 0;
+let captureInProgress = false;
+
+/* --- helpers --- */
+function cleanPlate(p){ return String(p||'').replace(/[^A-Za-z0-9]/g,'').toUpperCase(); }
+function formatDate(ymd){
+  if(!ymd) return '';
+  const s = String(ymd).trim();
+  if(/^\d{8}$/.test(s)){ const y=s.slice(0,4), m=s.slice(4,6), d=s.slice(6,8); return `${d}-${m}-${y}`; }
+  return s;
+}
+function getFirst(obj, keys){
+  for(const k of keys) if(obj[k] !== undefined && obj[k] !== null && String(obj[k]).trim() !== '') return obj[k];
+  return '';
+}
+
+/* --- RDW lookup --- */
+async function lookupRDW(plate){
+  const p = cleanPlate(plate);
+  if(!p) return [];
+  const url = `https://opendata.rdw.nl/resource/m9d7-ebf2.json?kenteken=${p}`;
+  const resp = await fetch(url);
+  if(!resp.ok) throw new Error('RDW error: ' + resp.status);
+  const arr = await resp.json();
+  return arr;
+}
+
+/* --- Camera start & auto-capture logic --- */
+async function startCameraAuto(){
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio:false });
+    video.srcObject = stream;
+    await video.play();
+    cameraFull.style.display = 'flex';
+    appContent.style.display = 'none';
+    // start analyzing frames to detect stability
+    stableFrames = 0;
+    analyzeFramesForAutoCapture();
+  } catch(err){
+    console.error('Camera error',err);
+    hint.innerText = 'Kon camera niet openen: ' + (err.message || err);
+    // show fallback UI
+    showAppContent();
+    showNoResult('Camera niet beschikbaar — vul kenteken handmatig in.');
   }
-  function getFirst(obj, keys){
-    for(const k of keys){ if(obj[k] !== undefined && obj[k] !== null && String(obj[k]).trim() !== '') return obj[k]; }
-    return '';
-  }
+}
 
-  // --- RDW lookup (same as before) ---
-  async function lookupRDW(plate) {
-    const p = cleanPlate(plate);
-    if (!p) return null;
-    const url = `https://opendata.rdw.nl/resource/m9d7-ebf2.json?kenteken=${p}`;
-    const resp = await fetch(url);
-    if (!resp.ok) throw new Error('RDW error ' + resp.status);
-    const arr = await resp.json();
-    return arr; // array
-  }
-
-  // --- Tesseract OCR on canvas ---
-  async function runOCRFromCanvas(canvas) {
-    // Use Tesseract.recognize directly for simplicity
-    setStatus('OCR verwerken (kan 5-25s duren) …');
-    // prefer english models but we only care alphanumeric; use whitelist
-    const dataUrl = canvas.toDataURL('image/jpeg', 0.9);
-    const res = await Tesseract.recognize(dataUrl, 'eng', {
-      tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 -',
-      preserve_interword_spaces: '0'
-    });
-    setStatus('OCR klaar');
-    return res.data ? res.data.text : '';
-  }
-
-  // --- Extract plate candidates (same logic) ---
-  function extractPlateCandidates(text) {
-    if (!text) return [];
-    const cleaned = text.toUpperCase().replace(/[^A-Z0-9 \-\n]/g, ' ');
-    const tokens = cleaned.split(/[\s\n]+/).filter(Boolean);
-    const candidates = tokens.map(t => t.replace(/[^A-Z0-9]/g,'')).filter(t => t.length >= 4 && t.length <= 8);
-    return [...new Set(candidates)];
-  }
-
-  // --- Camera control functions ---
-  async function startCamera(){
-    try {
-      localStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false });
-      videoEl.srcObject = localStream;
-      cameraArea.style.display = 'block';
-      captureBtn.disabled = false;
-      stopCamBtn.disabled = false;
-      openCamBtn.disabled = true;
-      setStatus('Camera actief — maak een foto of typ een kenteken');
-      await videoEl.play();
-    } catch (err) {
-      console.error(err);
-      alert('Kon camera niet openen: ' + err.message);
-      setStatus('camera niet beschikbaar');
+/* Compare small thumbnails to detect if scene is stable (simple approach) */
+function analyzeFramesForAutoCapture(){
+  if(captureInProgress) return;
+  const w = 160, h = 90;
+  const tmp = document.createElement('canvas');
+  tmp.width = w; tmp.height = h;
+  const ctx = tmp.getContext('2d');
+  ctx.drawImage(video, 0, 0, w, h);
+  const data = ctx.getImageData(0,0,w,h).data;
+  if(!lastFrameData){
+    lastFrameData = data;
+    stableFrames = 0;
+  } else {
+    // compute simple frame diff
+    let diff = 0;
+    for(let i=0;i<data.length;i+=4){
+      diff += Math.abs(data[i] - lastFrameData[i]);
+      diff += Math.abs(data[i+1] - lastFrameData[i+1]);
+      diff += Math.abs(data[i+2] - lastFrameData[i+2]);
+    }
+    const avg = diff / (w*h*3);
+    // threshold empirically chosen
+    if(avg < 10) stableFrames++;
+    else stableFrames = 0;
+    lastFrameData = data;
+    // if stable for several frames, auto capture
+    if(stableFrames >= 6){
+      // small delay to ensure focus
+      setTimeout(()=> {
+        if(!captureInProgress) captureAndProcess();
+      }, 400);
+      return;
     }
   }
+  autoCaptureTimer = requestAnimationFrame(analyzeFramesForAutoCapture);
+}
 
-  function stopCamera(){
-    try {
-      if(localStream){
-        localStream.getTracks().forEach(t => t.stop());
-        localStream = null;
-      }
-      videoEl.pause();
-      videoEl.srcObject = null;
-      cameraArea.style.display = 'none';
-      captureBtn.disabled = true;
-      stopCamBtn.disabled = true;
-      openCamBtn.disabled = false;
-      setStatus('Camera gestopt');
-    } catch (err) {
-      console.error(err);
-    }
+/* Force capture button */
+forceCapture.addEventListener('click', ()=> { if(!captureInProgress) captureAndProcess(); });
+
+cancelBtn.addEventListener('click', ()=> {
+  stopCamera();
+  showAppContent();
+  showNoResult('Gebruiker annuleerde camera. Vul kenteken handmatig in.');
+});
+
+/* Stop camera */
+function stopCamera(){
+  if(stream){
+    stream.getTracks().forEach(t => t.stop());
+    stream = null;
   }
+  if(autoCaptureTimer) cancelAnimationFrame(autoCaptureTimer);
+  cameraFull.style.display = 'none';
+}
 
-  // --- Capture photo & process ---
-  async function capturePhotoAndProcess(){
-    if(!localStream) { alert('Camera is niet actief'); return; }
-    // set canvas size to video natural size
-    const w = videoEl.videoWidth || 1280;
-    const h = videoEl.videoHeight || 720;
-    camCanvas.width = w;
-    camCanvas.height = h;
-    const ctx = camCanvas.getContext('2d');
-    ctx.drawImage(videoEl, 0, 0, w, h);
-    // show preview
-    const dataUrl = camCanvas.toDataURL('image/jpeg', 0.9);
-    photoPreview.src = dataUrl;
-    photoPreview.style.display = 'block';
-    // Run OCR on canvas
-    try {
-      const text = await runOCRFromCanvas(camCanvas);
-      const candidates = extractPlateCandidates(text);
-      if(candidates.length === 0){
-        setStatus('Geen kenteken gevonden via OCR. Probeer close-up of ander beeld.');
-        alert('Kenteken niet herkend. Probeer dichterbij of andere belichting.');
-        return;
-      }
-      // Try RDW for each candidate
-      setStatus('Zoeken RDW voor OCR-kandidaten …');
-      let found = false;
-      for(const cand of candidates){
-        setStatus('Proberen: ' + cand);
-        try {
-          const rdw = await lookupRDW(cand);
-          if(rdw && rdw.length > 0){
-            displayResult(cand, rdw[0]);
-            found = true;
-            break;
-          }
-        } catch(err){
-          console.error('RDW fout', err);
+/* Show app content area */
+function showAppContent(){ appContent.style.display = 'block'; }
+
+/* --- Image processing helpers --- */
+
+/* draw cropped region (plate-box) from video onto canvas and return canvas */
+function cropToPlateBox(){
+  // compute coordinates of plateBox relative to video element
+  const vb = video.getBoundingClientRect();
+  const pb = plateBox.getBoundingClientRect();
+  // video displayed width/height might not be intrinsic; compute scale from video element to actual video resolution
+  const vidW = video.videoWidth;
+  const vidH = video.videoHeight;
+  if(!vidW || !vidH) return null;
+  // how the video fits in the element (object-fit: cover) — we must compute the actual cropping
+  const elW = vb.width;
+  const elH = vb.height;
+  const scale = Math.max(vidW / elW, vidH / elH); // cover
+  // top-left of the displayed video in video element coordinates
+  const displayedWidth = vidW / scale;
+  const displayedHeight = vidH / scale;
+  const offsetX = (elW - displayedWidth) / 2;
+  const offsetY = (elH - displayedHeight) / 2;
+  // plate box relative to video element
+  const relX = pb.left - vb.left - offsetX;
+  const relY = pb.top - vb.top - offsetY;
+  // map to source video pixels
+  const sx = Math.max(0, Math.round(relX * scale));
+  const sy = Math.max(0, Math.round(relY * scale));
+  const sw = Math.round(pb.width * scale);
+  const sh = Math.round(pb.height * scale);
+
+  // draw onto canvas
+  captureCanvas.width = sw;
+  captureCanvas.height = sh;
+  const ctx = captureCanvas.getContext('2d');
+  // draw from video (source x,y,w,h)
+  ctx.drawImage(video, sx, sy, sw, sh, 0, 0, sw, sh);
+  return captureCanvas;
+}
+
+/* simple unsharp mask (sharpen) - convolution */
+function sharpenCanvas(srcCanvas, amount=1.0){
+  const w = srcCanvas.width, h = srcCanvas.height;
+  processCanvas.width = w; processCanvas.height = h;
+  const ctx = processCanvas.getContext('2d');
+  ctx.drawImage(srcCanvas,0,0);
+  const img = ctx.getImageData(0,0,w,h);
+  const out = ctx.createImageData(w,h);
+  const data = img.data, od = out.data;
+  // 3x3 sharpen kernel
+  const kernel = [0,-1,0,-1,5,-1,0,-1,0];
+  const ksum = 1;
+  for(let y=1;y<h-1;y++){
+    for(let x=1;x<w-1;x++){
+      let r=0,g=0,b=0;
+      let idx=0;
+      for(let ky=-1;ky<=1;ky++){
+        for(let kx=-1;kx<=1;kx++){
+          const px = x + kx, py = y + ky;
+          const pidx = (py*w + px)*4;
+          const kval = kernel[idx++];
+          r += data[pidx]*kval;
+          g += data[pidx+1]*kval;
+          b += data[pidx+2]*kval;
         }
       }
-      if(!found){
-        setStatus('Geen RDW-match voor OCR-kandidaten');
-        alert('OCR gaf kandidaten: ' + candidates.join(', ') + '\nMaar geen RDW-data gevonden.');
-      }
-    } catch(err){
-      console.error(err);
-      setStatus('Fout tijdens OCR');
-      alert('Fout bij OCR: ' + err.message);
+      const i = (y*w + x)*4;
+      od[i] = Math.min(255, Math.max(0, r/ksum * amount));
+      od[i+1] = Math.min(255, Math.max(0, g/ksum * amount));
+      od[i+2] = Math.min(255, Math.max(0, b/ksum * amount));
+      od[i+3] = 255;
     }
   }
+  ctx.putImageData(out,0,0);
+  return processCanvas;
+}
 
-  // --- Display RDW result in UI (reused logic) ---
+/* convert to grayscale + adjust contrast */
+function grayscaleContrastCanvas(srcCanvas, contrastFactor=1.2){
+  const w = srcCanvas.width, h = srcCanvas.height;
+  processCanvas.width = w; processCanvas.height = h;
+  const ctx = processCanvas.getContext('2d');
+  ctx.drawImage(srcCanvas,0,0);
+  const img = ctx.getImageData(0,0,w,h);
+  const data = img.data;
+  // contrast algorithm: factor
+  const factor = (259 * (contrastFactor*255 + 255)) / (255 * (259 - contrastFactor*255));
+  for(let i=0;i<data.length;i+=4){
+    const gray = 0.2126*data[i] + 0.7152*data[i+1] + 0.0722*data[i+2];
+    const c = factor * (gray - 128) + 128;
+    data[i]=data[i+1]=data[i+2]=Math.max(0,Math.min(255, c));
+  }
+  ctx.putImageData(img,0,0);
+  return processCanvas;
+}
+
+/* upscale canvas */
+function upscaleCanvas(srcCanvas, scale=2){
+  const w = srcCanvas.width, h = srcCanvas.height;
+  processCanvas.width = w*scale; processCanvas.height = h*scale;
+  const ctx = processCanvas.getContext('2d');
+  // use imageSmoothingEnabled true to avoid too blocky
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(srcCanvas, 0, 0, processCanvas.width, processCanvas.height);
+  return processCanvas;
+}
+
+/* --- OCR orchestration --- */
+async function runMultipleOCRs(canvas){
+  // produce a set of canvases with different preprocessing and scales
+  const canvases = [];
+  // original crop
+  canvases.push(canvas);
+  // grayscale+contrast 1.2 then upscale 2x
+  canvases.push(upscaleCanvas(grayscaleContrastCanvas(canvas,1.2),2));
+  // sharpen then upscale 3x
+  canvases.push(upscaleCanvas(sharpenCanvas(canvas,1.0),3));
+  // another variant with higher contrast
+  canvases.push(upscaleCanvas(grayscaleContrastCanvas(canvas,1.5),2));
+
+  // dedupe by size/content? We'll just run them sequentially, building candidate list
+  const candidates = new Set();
+  try {
+    hint.innerText = 'OCR bezig — meerdere pogingen lopen...';
+    for(const c of canvases){
+      // convert to dataURL
+      const dataUrl = c.toDataURL('image/jpeg',0.9);
+      try {
+        const res = await Tesseract.recognize(dataUrl, 'eng', {
+          tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 -',
+          // reduce page segmentation to single line / block if helpful
+          tessedit_pageseg_mode: '7' // treat as a single text line
+        });
+        const text = (res && res.data && res.data.text) ? res.data.text : '';
+        // extract tokens
+        const tokens = extractPlateCandidates(text);
+        tokens.forEach(t => candidates.add(t));
+        // small delay to give UI a break
+        await new Promise(r=>setTimeout(r,200));
+      } catch(err){
+        console.warn('OCR pass failed',err);
+      }
+    }
+  } finally {
+    hint.innerText = 'OCR klaar';
+  }
+  return Array.from(candidates);
+}
+
+function extractPlateCandidates(text){
+  if(!text) return [];
+  const cleaned = text.toUpperCase().replace(/[^A-Z0-9 \-\n]/g,' ');
+  const tokens = cleaned.split(/[\s\n]+/).filter(Boolean);
+  const filtered = tokens.map(t => t.replace(/[^A-Z0-9]/g,'')).filter(t => t.length >= 4 && t.length <= 8);
+  // also try to merge tokens if they look split, like AB 12 CD -> AB12CD
+  const merged = [];
+  for(let i=0;i<tokens.length;i++){
+    const t = tokens[i].replace(/[^A-Z0-9]/g,'');
+    if(t.length >= 4 && t.length <= 8) merged.push(t);
+    if(i < tokens.length-1){
+      const t2 = tokens[i+1].replace(/[^A-Z0-9]/g,'');
+      const join = (t + t2);
+      if(join.length >= 4 && join.length <= 8) merged.push(join);
+    }
+    if(i < tokens.length-2){
+      const t3 = tokens[i+2].replace(/[^A-Z0-9]/g,'');
+      const join3 = t + t2 + t3;
+      if(join3.length >= 4 && join3.length <= 8) merged.push(join3);
+    }
+  }
+  const uniq = [...new Set([...filtered, ...merged])];
+  return uniq;
+}
+
+/* Try until RDW returns a match for any candidate */
+async function tryCandidatesForRDW(candidates){
+  for(const cand of candidates){
+    try {
+      const arr = await lookupRDW(cand);
+      if(arr && arr.length > 0) return {kenteken:cand, data: arr[0]};
+    } catch(err){
+      console.warn('RDW lookup failed for',cand,err);
+    }
+  }
+  return null;
+}
+
+/* process pipeline - capture & OCR & RDW lookup */
+async function captureAndProcess(){
+  captureInProgress = true;
+  hint.innerText = 'Foto wordt gemaakt en verwerkt...';
+  // crop to plate box
+  const cropped = cropToPlateBox();
+  if(!cropped){
+    hint.innerText = 'Kon afbeelding niet maken, probeer opnieuw';
+    captureInProgress = false;
+    return;
+  }
+  // display small flash effect
+  cameraFull.style.background = '#111';
+  setTimeout(()=> cameraFull.style.background = '#000', 80);
+
+  // run multiple ocr passes
+  let candidates = [];
+  try {
+    candidates = await runMultipleOCRs(cropped);
+  } catch(err){
+    console.error('OCR fout',err);
+  }
+
+  // If no candidates, also try simple full-canvas OCR as fallback
+  if(candidates.length === 0){
+    // draw full frame to canvas quickly and try
+    const fullCanvas = document.createElement('canvas');
+    fullCanvas.width = video.videoWidth; fullCanvas.height = video.videoHeight;
+    const fctx = fullCanvas.getContext('2d');
+    fctx.drawImage(video,0,0,fullCanvas.width, fullCanvas.height);
+    try {
+      const res = await Tesseract.recognize(fullCanvas.toDataURL('image/jpeg',0.8), 'eng', {
+        tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 -'
+      });
+      candidates = extractPlateCandidates(res.data ? res.data.text : '');
+    } catch(e){}
+  }
+
+  // heuristics: filter likely Dutch plate forms by length and letter/number patterns - but be permissive
+  candidates = candidates.map(c => cleanPlate(c)).filter(Boolean);
+  // sort by length (most likely 6-7 chars first)
+  candidates.sort((a,b) => Math.abs(a.length-6) - Math.abs(b.length-6));
+
+  // try RDW for each candidate
+  let match = null;
+  if(candidates.length > 0){
+    hint.innerText = 'Zoeken in RDW voor ' + candidates.join(', ');
+    match = await tryCandidatesForRDW(candidates);
+  }
+
+  // stop camera now
+  stopCamera();
+  showAppContent();
+
+  if(match){
+    displayResult(match.kenteken, match.data);
+  } else {
+    // show fallback screen with suggestions
+    showNoResult('Geen match gevonden via OCR. Probeer opnieuw of vul kenteken handmatig in.');
+    // optionally show recognized candidates as suggestion
+    if(candidates.length) manualMessage.innerText = 'OCR kandidaten: ' + candidates.join(', ');
+    else manualMessage.innerText = '';
+  }
+
+  captureInProgress = false;
+}
+
+/* --- Display result layout --- */
+function displayResult(kenteken, data){
+  noResultArea.style.display = 'none';
+  resultArea.style.display = 'block';
+  rawBlock.style.display = 'none';
+
+  rKenteken.innerText = kenteken;
+  const merk = getFirst(data, ['merk']) || '';
+  const model = getFirst(data, ['handelsbenaming','uitvoering']) || '';
+  rMerkModel.innerText = (merk ? merk : '') + (merk && model ? ' • ' : '') + (model ? model : '');
+
+  rEerste.innerText = formatDate(getFirst(data, ['datum_eerste_toelating','datum_eerste_toelating_in_nederland']));
+  // price
+  const prijs = getFirst(data, ['catalogusprijs','catalogusprijs_euro','catalogus_prijs']);
+  rPrijs.innerText = prijs ? ('€ ' + Number(String(prijs).replace(/[^\d]/g,'')).toLocaleString('nl-NL')) : '-';
+
+  // vermogen: RDW fields may vary (vermogen (kW), vermogen_pk, vermogen_kW)
+  let vermogenVal = getFirst(data, ['vermogen_kW','vermogen','vermogen_pk','vermogen_kw']);
+  let vermogenText = '-';
+  let vermogenExtraText = '';
+  if(vermogenVal){
+    // normalize to number
+    const num = Number(String(vermogenVal).replace(/[^0-9\.-]/g,''));
+    if(!isNaN(num)){
+      // if value likely in kW (<=1500) or in pk? heuristics:
+      if(num > 200){ // probably pk (very high) -> leave as-is
+        vermogenText = `${num} pk`;
+        const kw = Math.round((num / 1.35962) * 10) / 10;
+        vermogenExtraText = `${kw} kW`;
+      } else {
+        // treat as kW
+        const kw = num;
+        const pk = Math.round((kw * 1.35962) * 10) / 10;
+        vermogenText = `${kw} kW (${pk} pk)`;
+      }
+    } else {
+      vermogenText = String(vermogenVal);
+    }
+  }
+  rVermogen.innerText = vermogenText;
+  rVermogenExtra.innerText = vermogenExtraText;
+
+  // torque (Nm) - try a few keys
+  const torqueVal = getFirst(data, ['koppel','koppel_nm','maximale_koppel','maximum_koppel','koppel_moment','max_moment','maximum_moment','maximum_torque','koppel_gew']);
+  rTorque.innerText = torqueVal ? torqueVal : '-';
+
+  // gewicht
+  const massa = getFirst(data, ['massa_rijklaar','massa_ledig_voertuig','toegestane_maximum_massa_voertuig','massa']);
+  rGewicht.innerText = massa ? massa + ' kg' : '-';
+
+  // other fields: show many interesting ones but after primary
+  rExtra.innerHTML = '';
   const fieldMap = [
-    ['Merk', ['merk']],
-    ['Model', ['handelsbenaming','uitvoering','handelsbenaming_toevoeging']],
-    ['Uitvoering', ['uitvoering']],
-    ['Inrichting', ['inrichting']],
-    ['Kleur', ['eerste_kleur','tweede_kleur']],
     ['Brandstof', ['brandstof_omschrijving','brandstof']],
-    ['Vermogen (kW)', ['vermogen','vermogen_pk','vermogen_kW']],
-    ['Massa (kg)', ['massa_ledig_voertuig','massa_rijklaar','toegestane_maximum_massa_voertuig']],
+    ['Kleur', ['eerste_kleur','tweede_kleur']],
     ['Aantal zitplaatsen', ['aantal_zitplaatsen']],
     ['Aantal deuren', ['aantal_deuren']],
-    ['Catalogusprijs', ['catalogusprijs']],
+    ['Inrichting', ['inrichting']],
+    ['Uitvoering', ['uitvoering']],
+    ['Handelsbenaming', ['handelsbenaming']],
+    ['APK vervaldatum', ['vervaldatum_apk']],
+    ['Chassisnummer (VIN)', ['chassisnummer','voertuig_identificatienummer']],
+    ['Trekgewicht', ['max_trekgewicht','max_trekgewicht_massa'] ],
+    ['Energielabel', ['energielabel']]
   ];
+  for(const [label, keys] of fieldMap){
+    const v = getFirst(data, keys);
+    if(!v) continue;
+    const row = document.createElement('div');
+    row.className = 'row';
+    row.innerHTML = `<div class="small-muted">${label}</div><div style="font-weight:700">${v}</div>`;
+    rExtra.appendChild(row);
+  }
 
-  function displayResult(kenteken, data){
-    sKenteken.innerText = kenteken;
-    const merk = getFirst(data, ['merk']) || '';
-    const model = getFirst(data, ['handelsbenaming','uitvoering']) || '';
-    sMerkModel.innerText = (merk ? merk : '') + (merk && model ? ' • ' : '') + (model ? model : '');
-    sEerste.innerText = formatDate(getFirst(data, ['datum_eerste_toelating','datum_eerste_toelating_in_nederland']));
-    sApk.innerText = formatDate(getFirst(data, ['vervaldatum_apk']));
-    keyGrid.innerHTML = '';
-    for(const [label, keys] of fieldMap){
-      const value = getFirst(data, keys);
-      if(value === '') continue;
-      const row = document.createElement('div');
-      row.className = 'row';
-      row.innerHTML = `<div class="label">${label}</div><div class="value">${value}</div>`;
-      keyGrid.appendChild(row);
+  // put remaining raw JSON in raw block but collapsed
+  rawPre.textContent = JSON.stringify(data, null, 2);
+  rawBlock.style.display = 'none';
+}
+
+/* --- UI helpers for no result --- */
+function showNoResult(msg){
+  resultArea.style.display = 'none';
+  noResultArea.style.display = 'block';
+  manualMessage.innerText = msg || '';
+  appContent.style.display = 'block';
+}
+
+/* --- UI events --- */
+retryBtn.addEventListener('click', ()=> {
+  // clear UI and restart camera
+  resultArea.style.display = 'none';
+  rawPre.textContent = '-';
+  startCameraAuto();
+});
+manualBtn.addEventListener('click', ()=> {
+  // show manual input panel
+  resultArea.style.display = 'none';
+  showNoResult('');
+});
+manualSearch.addEventListener('click', async ()=> {
+  const rawInput = (manualInput.value || '').trim();
+  const plate = cleanPlate(rawInput);
+  if(!plate){ manualMessage.innerText = 'Voer een kenteken in'; return; }
+  manualMessage.innerText = 'Zoeken...';
+  try {
+    const arr = await lookupRDW(plate);
+    if(arr && arr.length>0){
+      displayResult(plate, arr[0]);
+    } else {
+      manualMessage.innerText = 'Geen gegevens gevonden voor ' + plate;
     }
-    rawPre.textContent = JSON.stringify(data, null, 2);
-    summary.style.display = 'block';
-    raw.style.display = 'none';
-    noResult.style.display = 'none';
-    setStatus('klaar');
+  } catch(err){
+    manualMessage.innerText = 'Fout bij RDW: ' + (err.message || err);
   }
+});
+manualRetry.addEventListener('click', ()=> {
+  noResultArea.style.display = 'none';
+  startCameraAuto();
+});
 
-  // --- UI event bindings ---
-  openCamBtn.addEventListener('click', startCamera);
-  stopCamBtn.addEventListener('click', stopCamera);
-  captureBtn.addEventListener('click', capturePhotoAndProcess);
-
-  function enableCaptureIfStream(){
-    captureBtn.disabled = !localStream;
-  }
-
-  // Manual search (as before)
-  async function zoekKenteken(){
-    const rawInput = input.value || '';
-    const kenteken = cleanPlate(rawInput);
-    if(!kenteken){ alert('Voer een kenteken in'); input.focus(); return; }
-    summary.style.display='none'; raw.style.display='none'; noResult.style.display='none'; keyGrid.innerHTML=''; rawPre.textContent='-';
-    setStatus('zoeken...');
-    try{
-      const arr = await lookupRDW(kenteken);
-      if(!arr || arr.length === 0){
-        setStatus('klaar');
-        noResult.style.display='block';
-        return;
-      }
-      displayResult(kenteken, arr[0]);
-    }catch(err){
-      console.error(err);
-      setStatus('fout');
-      noResult.style.display='block';
-      noResult.innerHTML = '<strong>Fout bij ophalen data</strong><div style="margin-top:6px;color:#a00">'+ (err.message || err) +'</div>';
-    }
-  }
-  zoekBtn.addEventListener('click', zoekKenteken);
-  input.addEventListener('keydown', (e) => { if(e.key === 'Enter') zoekKenteken(); });
-  rawToggle.addEventListener('click', () => { raw.style.display = raw.style.display === 'none' ? 'block' : 'none'; });
-  clearBtn.addEventListener('click', () => {
-    input.value=''; summary.style.display='none'; raw.style.display='none'; noResult.style.display='none'; keyGrid.innerHTML=''; rawPre.textContent='-'; setStatus('klaar');
-    photoPreview.style.display='none';
-  });
-
-  // Clean up camera if user leaves page
-  window.addEventListener('beforeunload', stopCamera);
-
-  // Init
-  setStatus('klaar');
+/* init on page load */
+window.addEventListener('load', ()=> {
+  // try to start camera immediately
+  startCameraAuto();
+});
 </script>
 </body>
 </html>
