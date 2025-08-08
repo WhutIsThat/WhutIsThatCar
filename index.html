@@ -3,202 +3,241 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>Kenteken-Scanner — Verbeterd prototype</title>
+<title>Kenteken Scanner — Strak & Robuust</title>
+
+<!-- STYLING: iOS-like, natuurlijke tinten (wit / grijs / olijf / warme 'krimp') -->
 <style>
-  :root{ --accent:#0b66ff; --bg:#0f1724; --muted:#94a3b8; --card:#ffffff; --maxw:980px; }
-  html,body{height:100%;margin:0;background:var(--bg);color:#fff;font-family:Inter,system-ui,Arial;}
-  /* Fullscreen camera container */
-  #cameraFull { position:fixed;inset:0;display:flex;align-items:center;justify-content:center; background:#000; z-index:50; flex-direction:column; }
-  video#video { width:100%; height:100%; object-fit:cover; display:block; }
-  .overlay { position:absolute; inset:0; pointer-events:none; display:flex; align-items:center; justify-content:center; }
-  .plate-box {
-    width:62%; max-width:900px; aspect-ratio:4/1; border-radius:10px;
-    border: 3px dashed rgba(255,255,255,0.9); box-shadow:0 8px 30px rgba(0,0,0,0.6) inset;
-    display:flex; align-items:center; justify-content:center; font-weight:700; letter-spacing:0.06em;
-    color:rgba(255,255,255,0.95); background: linear-gradient(180deg, rgba(255,255,255,0.02), rgba(0,0,0,0.08));
-    text-align:center; padding:6px;
-  }
-  .hint { position:absolute; top:12px; left:12px; color:#fff; background:rgba(0,0,0,0.35); padding:8px 10px; border-radius:8px; font-size:0.95rem; }
-  .controls-floating { position:absolute; bottom:18px; left:50%; transform:translateX(-50%); display:flex; gap:10px; z-index:60; }
-  button{background:var(--accent); color:#fff; border:0; padding:10px 14px; border-radius:10px; cursor:pointer; font-weight:700;}
-  button.secondary{background:#fff; color:var(--accent); border:1px solid rgba(11,102,255,0.12);}
-  button.ghost{background:transparent; border:1px solid rgba(255,255,255,0.18); color:#fff;}
+:root{
+  --bg: #f6f6f6;           /* zacht wit / canvas */
+  --card: #ffffff;         /* kaarten */
+  --muted: #8b8f93;        /* grijs */
+  --olive: #707a2a;        /* olijf */
+  --krimp: #8b5e3c;        /* warme bruine/terracotta */
+  --accent: var(--olive);
+  --radius: 14px;
+  --maxw: 980px;
+  font-family: -apple-system, BlinkMacSystemFont, "San Francisco", "SF Pro Text",
+               "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  -webkit-font-smoothing:antialiased;
+  -moz-osx-font-smoothing:grayscale;
+}
 
-  /* App content after capture */
-  #app { display:none; padding:18px; max-width:var(--maxw); margin:22px auto; color:#0b1724; background: #f8fafc; border-radius:12px; box-shadow:0 8px 40px rgba(2,6,23,0.12); }
-  header{display:flex;align-items:center;gap:12px}
-  h1{margin:0;font-size:1.2rem;color:#0b1724}
-  .lead{color:var(--muted);font-size:0.95rem}
+html,body{height:100%;margin:0;background:var(--bg);color:#072018}
+.container{max-width:var(--maxw);margin:18px auto;padding:0 16px}
 
-  .result-panel{margin-top:12px}
-  .top{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap}
-  .plate-big{font-size:2.4rem;font-weight:900;color:#0b1724}
-  .meta{color:#374151}
-  .primary-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px}
-  .prim{background:#fff;padding:12px;border-radius:10px;border:1px solid #eef2f6}
-  .prim h3{margin:0;font-size:0.9rem;color:var(--muted)}
-  .prim .val{font-weight:800;font-size:1.05rem;margin-top:6px;color:#0b1724}
-  .other{margin-top:14px}
-  .other h4{margin:0 0 8px 0;color:var(--muted)}
-  .grid-rows{display:grid;gap:8px}
-  .row{display:flex;justify-content:space-between;background:#fff;border:1px solid #eef2f6;padding:10px;border-radius:8px;color:#0b1724}
+/* FULLSCREEN CAMERA */
+#cameraRoot{position:fixed;inset:0;background:#000;display:flex;align-items:center;justify-content:center;z-index:80}
+video#cam{width:100%;height:100%;object-fit:cover;border-radius:0;display:block}
+.overlay{position:absolute;inset:0;pointer-events:none;display:flex;align-items:center;justify-content:center}
+.plateBox{
+  width:64%; max-width:820px; aspect-ratio:4/1; border-radius:12px;
+  background: linear-gradient(180deg, rgba(255,255,255,0.02), rgba(0,0,0,0.06));
+  border: 2px solid rgba(255,255,255,0.95);
+  box-shadow: 0 8px 30px rgba(0,0,0,0.45) inset;
+  display:flex;align-items:center;justify-content:center;padding:8px;font-weight:700;color:rgba(255,255,255,0.95);
+  letter-spacing:0.06em;
+}
+.hintBadge{
+  position:absolute;top:16px;left:16px;background:rgba(255,255,255,0.9);color:#1b1b1b;padding:8px 10px;border-radius:10px;font-weight:600;font-size:0.95rem;
+  box-shadow:0 6px 20px rgba(0,0,0,0.15);
+}
 
-  .fallback{display:none;padding:12px;background:#fff;border-radius:10px;margin-top:12px}
-  input[type=text]{padding:10px;border-radius:8px;border:1px solid #e6eefc;min-width:220px}
-  pre.raw{background:#0f1724;color:#e6eefc;padding:12px;border-radius:8px;overflow:auto;font-size:0.85rem}
+/* top controls (hidden on small screens) */
+.controls{position:absolute;bottom:18px;left:50%;transform:translateX(-50%);display:flex;gap:10px;z-index:90}
+.btn{
+  background:var(--card); border:0;padding:10px 14px;border-radius:12px;cursor:pointer;font-weight:700;
+  box-shadow:0 6px 18px rgba(11,12,12,0.08);
+}
+.btn.secondary{background:transparent;border:1px solid rgba(255,255,255,0.12);color:#fff}
+.btn.capture{background:linear-gradient(90deg,var(--olive),var(--krimp));color:#fff}
 
-  @media (max-width:720px){
-    .plate-box{width:86%}
-    .primary-grid{grid-template-columns:1fr}
-    .top{flex-direction:column;align-items:flex-start}
-    .plate-big{font-size:1.8rem}
-  }
+/* APP (result) */
+#app{display:none;position:relative;z-index:100;padding:18px;margin:18px auto;width:100%;max-width:var(--maxw);box-sizing:border-box}
+.card{background:var(--card);border-radius:var(--radius);padding:16px;box-shadow:0 8px 30px rgba(2,6,23,0.06);color:#072018}
+.headerRow{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+.title{font-size:16px;font-weight:800}
+.subtitle{color:var(--muted);margin-top:6px;font-size:13px}
+
+/* result layout */
+.plateBig{font-size:48px;font-weight:900;letter-spacing:0.08em;color:var(--olive)}
+.meta{color:var(--muted);font-weight:600;margin-top:6px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:14px}
+.primary{background:#fbfdff;padding:12px;border-radius:12px;border:1px solid #eef3f6}
+.primary h4{margin:0;color:var(--muted);font-weight:700}
+.primary .val{margin-top:6px;font-weight:900;font-size:1.1rem;color:#072018}
+
+/* extras */
+.extras{margin-top:14px}
+.row{display:flex;justify-content:space-between;align-items:center;padding:10px;border-radius:10px;background:#fff;border:1px solid #eef3f6;margin-top:8px}
+.smallMuted{color:var(--muted);font-size:13px}
+
+/* fallback/manual */
+.manualWrap{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap}
+input[type=text]{padding:10px;border-radius:10px;border:1px solid #e6eefc;min-width:160px}
+
+/* raw JSON area */
+pre.raw{background:#0b1220;color:#e6eefc;padding:12px;border-radius:8px;margin-top:12px;overflow:auto;max-height:280px}
+
+/* mobile */
+@media (max-width:720px){
+  .plateBox{width:86%}
+  .plateBig{font-size:36px}
+  .grid2{grid-template-columns:1fr}
+}
 </style>
 </head>
 <body>
 
-<!-- Fullscreen camera -->
-<div id="cameraFull" aria-hidden="false">
-  <video id="video" autoplay playsinline muted></video>
+<!-- CAMERA fullscreen root -->
+<div id="cameraRoot" aria-hidden="false">
+  <video id="cam" autoplay playsinline muted></video>
+
   <div class="overlay" aria-hidden="true">
-    <div class="plate-box" id="plateBox">Plaats het kenteken in dit vak</div>
-    <div class="hint" id="hint">Automatisch: foto wordt genomen als het beeld stabiel is</div>
+    <div class="plateBox" id="plateBox">Plaats het kenteken hier</div>
+    <div class="hintBadge" id="hintBadge">Automatisch scannen — houd het vak stil</div>
   </div>
 
-  <div class="controls-floating" aria-hidden="true">
-    <button id="forceCapture" class="ghost">Maak foto nu</button>
-    <button id="cancelBtn" class="secondary">Annuleer</button>
+  <div class="controls" aria-hidden="true">
+    <button class="btn" id="btnManual">Handmatig</button>
+    <button class="btn capture" id="btnForce">Maak foto</button>
   </div>
 </div>
 
-<!-- App content (results / fallback) -->
-<div id="app" role="main" aria-live="polite">
-  <header>
-    <div>
-      <h1>Kenteken Checker — Resultaat</h1>
-      <div class="lead">Foto & OCR gebeuren lokaal in je browser — NIET geüpload.</div>
-    </div>
-  </header>
-
-  <div id="resultArea" class="result-panel" style="display:none">
-    <div class="top">
+<!-- App (shown after capture) -->
+<div id="app" style="display:none;">
+  <div class="card">
+    <div class="headerRow">
       <div>
-        <div id="r-kenteken" class="plate-big">—</div>
-        <div id="r-merkmodel" class="meta">—</div>
+        <div class="title">Kenteken Scanner</div>
+        <div class="subtitle">Resultaat — lokaal verwerkt, geen uploads</div>
       </div>
       <div style="text-align:right">
-        <div class="meta">Eerste toelating</div>
-        <div id="r-eerste" style="font-weight:800;color:#0b1724"></div>
+        <div class="smallMuted">Status</div>
+        <div id="statusSmall" style="font-weight:800">klaar</div>
       </div>
     </div>
 
-    <div class="primary-grid">
-      <div class="prim">
-        <h3>Catalogusprijs</h3>
-        <div class="val" id="r-prijs">—</div>
+    <div id="resultCard" style="display:none;margin-top:14px">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap">
+        <div>
+          <div id="resPlate" class="plateBig">—</div>
+          <div id="resBrandModel" class="meta">—</div>
+        </div>
+        <div style="text-align:right">
+          <div class="smallMuted">Eerste toelating</div>
+          <div id="resFirst" style="font-weight:900"></div>
+        </div>
       </div>
-      <div class="prim">
-        <h3>Vermogen</h3>
-        <div class="val" id="r-vermogen">—</div>
-        <div style="margin-top:6px;color:var(--muted)" id="r-vermogen-extra"></div>
+
+      <div class="grid2">
+        <div class="primary">
+          <h4>Catalogusprijs</h4>
+          <div id="resPrice" class="val">—</div>
+        </div>
+        <div class="primary">
+          <h4>Vermogen</h4>
+          <div id="resPower" class="val">—</div>
+          <div class="smallMuted" id="resPowerExtra"></div>
+        </div>
       </div>
-    </div>
 
-    <div class="primary-grid" style="margin-top:10px">
-      <div class="prim">
-        <h3>Torque (Nm)</h3>
-        <div class="val" id="r-torque">—</div>
+      <div class="grid2" style="margin-top:12px">
+        <div class="primary">
+          <h4>Torque (Nm)</h4>
+          <div id="resTorque" class="val">—</div>
+        </div>
+        <div class="primary">
+          <h4>Massa</h4>
+          <div id="resMass" class="val">—</div>
+        </div>
       </div>
-      <div class="prim">
-        <h3>Massa / Gewicht</h3>
-        <div class="val" id="r-gewicht">—</div>
+
+      <div class="extras">
+        <h4 class="smallMuted">Extra informatie</h4>
+        <div id="extraRows"></div>
       </div>
+
+      <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn secondary" id="btnRetry">Opnieuw scannen</button>
+        <button class="btn" id="btnManual2">Handmatig kenteken</button>
+        <button class="btn" id="btnRaw">Toon raw</button>
+      </div>
+
+      <pre id="rawJson" class="raw" style="display:none"></pre>
     </div>
 
-    <div class="other">
-      <h4>Extra informatie</h4>
-      <div id="r-extra" class="grid-rows"></div>
+    <div id="noResult" style="display:none;margin-top:14px">
+      <div style="font-weight:800">Herkennen niet gelukt</div>
+      <div class="smallMuted" style="margin-top:6px">Probeer opnieuw of vul handmatig het kenteken in.</div>
+      <div class="manualWrap">
+        <input type="text" id="manualPlateInput" placeholder="Bijv: AB-12-CD">
+        <button class="btn" id="manualSearchBtn">Zoek</button>
+        <button class="btn secondary" id="manualRetryBtn">Opnieuw foto</button>
+      </div>
+      <div id="manualMsg" style="margin-top:8px;color:#a00"></div>
     </div>
-
-    <div style="margin-top:12px;display:flex;gap:8px">
-      <button id="retryBtn" class="secondary">Opnieuw foto maken</button>
-      <button id="manualBtn">Handmatig kenteken invullen</button>
-      <button id="toggleRaw" class="ghost">Toon raw JSON</button>
-    </div>
-
-    <div id="rawBlock" style="margin-top:12px;display:none">
-      <div style="margin-bottom:6px;color:var(--muted)">Raw RDW JSON</div>
-      <pre id="rawPre" class="raw">-</pre>
-    </div>
-  </div>
-
-  <div id="noResult" class="fallback" style="display:none">
-    <strong>Herkenning niet gelukt</strong>
-    <div style="margin-top:8px;color:#374151">Vul handmatig het kenteken in of probeer opnieuw.</div>
-    <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">
-      <input id="manualInput" type="text" placeholder="Bijv: AB-12-CD">
-      <button id="manualSearch" class="secondary">Zoek</button>
-      <button id="manualRetry" class="ghost">Opnieuw foto</button>
-    </div>
-    <div id="manualMessage" style="margin-top:10px;color:#a00"></div>
   </div>
 </div>
 
-<!-- Hidden canvases for processing -->
-<canvas id="captureCanvas" style="display:none"></canvas>
+<!-- canavs for processing (hidden) -->
+<canvas id="capCanvas" style="display:none"></canvas>
 <canvas id="procCanvas" style="display:none"></canvas>
 
-<!-- Tesseract -->
+<!-- Tesseract.js -->
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@4.0.2/dist/tesseract.min.js"></script>
 
 <script>
-/* =============================
-   Verbeterde Kenteken Scanner
-   ============================= */
-
-const video = document.getElementById('video');
-const cameraFull = document.getElementById('cameraFull');
+/* ========== Config & State ========== */
+const video = document.getElementById('cam');
+const cameraRoot = document.getElementById('cameraRoot');
 const plateBox = document.getElementById('plateBox');
-const hint = document.getElementById('hint');
-const forceCapture = document.getElementById('forceCapture');
-const cancelBtn = document.getElementById('cancelBtn');
+const hintBadge = document.getElementById('hintBadge');
+const btnForce = document.getElementById('btnForce');
+const btnManual = document.getElementById('btnManual');
 
 const app = document.getElementById('app');
-const resultArea = document.getElementById('resultArea');
+const resultCard = document.getElementById('resultCard');
 const noResult = document.getElementById('noResult');
+const statusSmall = document.getElementById('statusSmall');
+const resPlate = document.getElementById('resPlate');
+const resBrandModel = document.getElementById('resBrandModel');
+const resFirst = document.getElementById('resFirst');
+const resPrice = document.getElementById('resPrice');
+const resPower = document.getElementById('resPower');
+const resPowerExtra = document.getElementById('resPowerExtra');
+const resTorque = document.getElementById('resTorque');
+const resMass = document.getElementById('resMass');
+const extraRows = document.getElementById('extraRows');
+const rawJson = document.getElementById('rawJson');
 
-const rKenteken = document.getElementById('r-kenteken');
-const rMerkModel = document.getElementById('r-merkmodel');
-const rEerste = document.getElementById('r-eerste');
-const rPrijs = document.getElementById('r-prijs');
-const rVermogen = document.getElementById('r-vermogen');
-const rVermogenExtra = document.getElementById('r-vermogen-extra');
-const rTorque = document.getElementById('r-torque');
-const rGewicht = document.getElementById('r-gewicht');
-const rExtra = document.getElementById('r-extra');
-const rawPre = document.getElementById('rawPre');
-const rawBlock = document.getElementById('rawBlock');
+const btnRetry = document.getElementById('btnRetry');
+const btnManual2 = document.getElementById('btnManual2');
+const btnRaw = document.getElementById('btnRaw');
+const manualPlateInput = document.getElementById('manualPlateInput');
+const manualSearchBtn = document.getElementById('manualSearchBtn');
+const manualRetryBtn = document.getElementById('manualRetryBtn');
+const manualMsg = document.getElementById('manualMsg');
 
-const retryBtn = document.getElementById('retryBtn');
-const manualBtn = document.getElementById('manualBtn');
-const manualSearch = document.getElementById('manualSearch');
-const manualRetry = document.getElementById('manualRetry');
-const manualInput = document.getElementById('manualInput');
-const manualMessage = document.getElementById('manualMessage');
-const toggleRaw = document.getElementById('toggleRaw');
-
-const captureCanvas = document.getElementById('captureCanvas');
+const capCanvas = document.getElementById('capCanvas');
 const procCanvas = document.getElementById('procCanvas');
 
 let stream = null;
-let lastFrameData = null;
-let stableFrames = 0;
-let autoCaptureAnim = null;
+let analyzing = false;
+let frameTimer = null;
+let stabilityCount = 0;
+let lastThumb = null;
+let lightCandidates = new Map(); // candidate => count
 let captureInProgress = false;
 
-/* ---- Helpers ---- */
-function setHint(txt){ hint.innerText = txt; }
-function cleanPlateRaw(s){ return String(s||'').toUpperCase().replace(/[^A-Z0-9]/g,''); }
+const LIGHT_OCR_INTERVAL = 450;     // ms between low-res OCR attempts
+const STABLE_REQUIRED = 3;          // repetitions of same candidate to accept
+const LIGHT_OCR_SCALE = 0.35;       // low-res scale for quick OCR
+const CONFIDENCE_THRESHOLD = 0.6;   // (not strict) used in heuristics
+
+/* ========== Utilities ========== */
+function setStatus(txt){ statusSmall.innerText = txt; }
+function clamp(n,min,max){return Math.max(min,Math.min(max,n));}
+function cleanAlnum(s){ return String(s||'').toUpperCase().replace(/[^A-Z0-9]/g,''); }
 function formatDate(ymd){
   if(!ymd) return '';
   const s = String(ymd).trim();
@@ -210,319 +249,263 @@ function getFirst(obj, keys){
   return '';
 }
 
-/* ---- Dutch-like plate heuristics & corrections ---- */
-function normalizeCommonOCR(errPlate){
-  // replace typical confusions but keep choices broad (we'll generate variants later)
-  return errPlate
-    .replace(/[^A-Z0-9]/g,'')
-    .replace(/[O]/g,'O') // keep as O, we'll try 0/O variants later
-    .toUpperCase();
+/* simple Dutch-likeness validator (loose) */
+function isLikelyDutchPlate(p){
+  if(!p) return false;
+  const s = cleanAlnum(p);
+  if(s.length < 4 || s.length > 8) return false;
+  const letters = (s.match(/[A-Z]/g)||[]).length;
+  const digits = (s.match(/[0-9]/g)||[]).length;
+  return (letters >= 2 && digits >= 2);
 }
 
-// Heuristic scoring for candidate plates
-function scoreCandidatePlate(p){
-  if(!p) return 0;
-  const plate = p.toUpperCase();
-  const letters = (plate.match(/[A-Z]/g)||[]).length;
-  const digits = (plate.match(/[0-9]/g)||[]).length;
-  let score = 0;
-  // prefer lengths between 4 and 8 (NL typical)
-  if(plate.length >= 4 && plate.length <= 8) score += 10;
-  // require at least 2 letters and 2 digits ideally
-  if(letters >= 2) score += 5;
-  if(digits >= 2) score += 5;
-  // bonus if plausible pattern-like (mixed letters/digits)
-  if(/[A-Z].*[0-9]|[0-9].*[A-Z]/.test(plate)) score += 3;
-  // small penalty for all letters or all digits
-  if(letters === 0 || digits === 0) score -= 5;
-  // length closeness to 6 (common)
-  score -= Math.abs(plate.length - 6);
-  return score;
-}
-
-// Generate likely variants from OCR string by substituting confusions
-function generateVariants(s){
-  if(!s) return [];
-  const map = [
-    ['0','O'], ['O','0'],
-    ['1','I'], ['I','1'],
-    ['5','S'], ['S','5'],
-    ['8','B'], ['B','8']
-  ];
-  const base = s.toUpperCase().replace(/[^A-Z0-9]/g,'');
+/* correct common OCR confusions and generate variants */
+function generateVariants(base){
+  base = String(base||'').toUpperCase().replace(/[^A-Z0-9]/g,'');
+  if(!base) return [];
+  const mapPairs = [['0','O'],['1','I'],['5','S'],['8','B'],['2','Z'],['6','G']];
   const variants = new Set([base]);
-  // single substitutions
-  for(const [a,b] of map){
+  for(const [a,b] of mapPairs){
     if(base.includes(a)) variants.add(base.split(a).join(b));
+    if(base.includes(b)) variants.add(base.split(b).join(a));
   }
-  // double substitutions (pairwise)
-  for(const [a1,b1] of map){
-    for(const [a2,b2] of map){
-      if(a1===a2 && b1===b2) continue;
-      let v = base;
-      if(v.includes(a1)) v = v.split(a1).join(b1);
-      if(v.includes(a2)) v = v.split(a2).join(b2);
-      variants.add(v);
+  // two-step combos
+  const arr = Array.from(variants);
+  for(let i=0;i<arr.length;i++){
+    for(let j=0;j<mapPairs.length;j++){
+      const [a,b] = mapPairs[j];
+      if(arr[i].includes(a)) variants.add(arr[i].split(a).join(b));
+      if(arr[i].includes(b)) variants.add(arr[i].split(b).join(a));
     }
   }
   return Array.from(variants);
 }
 
-// Validate 'likely Dutch' plate (loose): length 4-8, has letters & digits
-function isLikelyDutch(p){
-  if(!p) return false;
-  const plate = p.replace(/[^A-Z0-9]/g,'').toUpperCase();
-  if(plate.length < 4 || plate.length > 8) return false;
-  const letters = (plate.match(/[A-Z]/g)||[]).length;
-  const digits = (plate.match(/[0-9]/g)||[]).length;
-  return letters >= 2 && digits >= 2;
+/* scoring for candidate (simple heuristic) */
+function scorePlate(p){
+  if(!p) return 0;
+  const s = cleanAlnum(p);
+  let score = 0;
+  const letters = (s.match(/[A-Z]/g)||[]).length;
+  const digits = (s.match(/[0-9]/g)||[]).length;
+  if(s.length>=4 && s.length<=8) score += 20;
+  score += letters*2 + digits*2;
+  if(/[A-Z].*[0-9]|[0-9].*[A-Z]/.test(s)) score += 6;
+  score -= Math.abs(s.length - 6); // prefer length ~6
+  // small bonus for patterns like 2-2-2
+  if(/^[A-Z]{2}[0-9]{2}[A-Z]{2}$/.test(s)) score += 8;
+  return score;
 }
 
-/* ---- RDW lookups (main + extras). If a dataset fails, ignore gracefully ---- */
-async function lookupRDWBase(plate){
-  const p = cleanPlateRaw(plate);
-  if(!p) return [];
-  const url = `https://opendata.rdw.nl/resource/m9d7-ebf2.json?kenteken=${p}`;
-  const resp = await fetch(url);
-  if(!resp.ok) throw new Error('RDW basis error: ' + resp.status);
-  return resp.json();
-}
+/* ========== CAMERA & Light OCR loop ========== */
 
-// extra dataset examples (may not contain torque in reality) — we try them
-async function lookupRDWExtraVermogen(plate){
-  const p = cleanPlateRaw(plate);
-  if(!p) return [];
-  // dataset id for motorvermogen (example - may or may not return)
-  const url = `https://opendata.rdw.nl/resource/8ys7-d773.json?kenteken=${p}`;
-  try {
-    const r = await fetch(url);
-    if(!r.ok) throw new Error('no extra vermogen');
-    return r.json();
-  } catch(e){ return []; }
-}
-
-async function lookupRDWExtraTorque(plate){
-  const p = cleanPlateRaw(plate);
-  if(!p) return [];
-  // dataset id for torque etc (example)
-  const url = `https://opendata.rdw.nl/resource/vez5-84b4.json?kenteken=${p}`;
-  try {
-    const r = await fetch(url);
-    if(!r.ok) throw new Error('no extra torque');
-    return r.json();
-  } catch(e){ return []; }
-}
-
-/* ---- Camera start & auto-capture detection ---- */
-async function startCameraAuto(){
-  try {
-    stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio:false });
+async function startCamera(){
+  try{
+    stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode:'environment' }, audio:false });
     video.srcObject = stream;
     await video.play();
-    cameraFull.style.display = 'flex';
+    cameraRoot.style.display = 'flex';
     app.style.display = 'none';
-    stableFrames = 0;
-    lastFrameData = null;
-    analyzeFrames();
+    setStatus('Scanner actief — houd het vak stil');
+    // start light OCR loop
+    analyzing = true;
+    lightCandidates.clear();
+    scheduleLightOCR();
   } catch(err){
-    console.error('camera error', err);
-    // fallback to manual UI
-    stopCamera();
+    console.error('camera start failed', err);
     showApp();
-    showNoResult('Kon camera niet openen: ' + (err.message||err));
+    showNoResult('Kon camera niet openen: ' + (err.message || err));
   }
 }
 
 function stopCamera(){
-  if(stream){
-    stream.getTracks().forEach(t => t.stop());
-    stream = null;
-  }
-  if(autoCaptureAnim) cancelAnimationFrame(autoCaptureAnim);
-  cameraFull.style.display = 'none';
+  analyzing = false;
+  if(frameTimer) { clearTimeout(frameTimer); frameTimer = null; }
+  if(stream){ stream.getTracks().forEach(t=>t.stop()); stream = null; }
+  cameraRoot.style.display = 'none';
 }
 
-/* simple frame diff-based stability detector */
-function analyzeFrames(){
-  if(captureInProgress) return;
-  const w = 160, h = 90;
+/* schedule lightweight OCR of the cropped plate area (low res) */
+function scheduleLightOCR(){
+  if(!analyzing || captureInProgress) return;
+  frameTimer = setTimeout(async ()=>{
+    try {
+      await doLightOCR();
+    } catch(e){
+      console.warn('lightOCR err', e);
+    }
+    scheduleLightOCR();
+  }, LIGHT_OCR_INTERVAL);
+}
+
+/* create a small crop of the video as thumbnail for fast OCR */
+async function doLightOCR(){
+  if(!video.videoWidth || !video.videoHeight) return;
+  // crop to plateBox region relative to video display (account for object-fit:cover)
+  const crop = cropToPlateBoxCanvas();
+  if(!crop) return;
+  // create low-res scaled canvas for quick OCR
+  const w = Math.max(160, Math.round(crop.width * LIGHT_OCR_SCALE));
+  const h = Math.max(40, Math.round(crop.height * LIGHT_OCR_SCALE));
   const tmp = document.createElement('canvas');
   tmp.width = w; tmp.height = h;
   const ctx = tmp.getContext('2d');
+  ctx.drawImage(crop.canvas, 0, 0, crop.width, crop.height, 0,0,w,h);
+
+  // quick preprocessing: grayscale + small contrast
+  const imgData = ctx.getImageData(0,0,w,h);
+  for(let i=0;i<imgData.data.length;i+=4){
+    const r = imgData.data[i], g=imgData.data[i+1], b=imgData.data[i+2];
+    let gray = 0.2126*r + 0.7152*g + 0.0722*b;
+    gray = gray * 1.05; // slight contrast
+    imgData.data[i]=imgData.data[i+1]=imgData.data[i+2]=gray;
+  }
+  ctx.putImageData(imgData,0,0);
+
+  // run light Tesseract on TMP (fast, but low-res)
   try {
-    ctx.drawImage(video, 0, 0, w, h);
-  } catch(e){
-    autoCaptureAnim = requestAnimationFrame(analyzeFrames);
-    return;
-  }
-  const data = ctx.getImageData(0,0,w,h).data;
-  if(!lastFrameData){
-    lastFrameData = data;
-    stableFrames = 0;
-  } else {
-    let diff=0;
-    for(let i=0;i<data.length;i+=4){
-      diff += Math.abs(data[i] - lastFrameData[i]);
-      diff += Math.abs(data[i+1] - lastFrameData[i+1]);
-      diff += Math.abs(data[i+2] - lastFrameData[i+2]);
-    }
-    const avg = diff / (w*h*3);
-    if(avg < 9) stableFrames++;
-    else stableFrames = 0;
-    lastFrameData = data;
-    if(stableFrames >= 6){
-      // small wait then capture sequence
-      setTimeout(()=> { if(!captureInProgress) captureSequence(); }, 300);
-      return;
-    }
-  }
-  autoCaptureAnim = requestAnimationFrame(analyzeFrames);
-}
-
-/* force capture / cancel */
-forceCapture.addEventListener('click', ()=> { if(!captureInProgress) captureSequence(); });
-cancelBtn.addEventListener('click', ()=> { stopCamera(); showApp(); showNoResult('Gebruiker annuleerde camera. Vul kenteken handmatig in.'); });
-
-/* ---- Capture + OCR pipeline ---- */
-async function captureSequence(){
-  captureInProgress = true;
-  setHint('Fotograferen & verwerken...');
-  // make 3 captures quickly with small delay, accumulate OCR candidates
-  const allCandidates = new Map(); // candidate -> score
-  for(let i=0;i<3;i++){
-    const c = await captureOnceAndOCR();
-    // merge candidates with scoring
-    for(const cand of c){
-      const norm = cand.replace(/[^A-Z0-9]/g,'').toUpperCase();
-      if(!norm) continue;
-      const prev = allCandidates.get(norm) || 0;
-      allCandidates.set(norm, prev + 1); // count occurrences across passes
-    }
-    await new Promise(r=>setTimeout(r, 220));
-  }
-
-  // produce a candidate list with added variants & scoring
-  const candidateEntries = [];
-  for(const [cand, count] of allCandidates.entries()){
-    // generate variants (O<->0 etc)
-    const variants = generateVariants(cand);
-    for(const v of variants){
-      const score = scoreCandidatePlate(v) + (count*2);
-      candidateEntries.push({plate:v, score});
-    }
-  }
-
-  // If no candidate from cut-out, try full-frame fallback OCR
-  if(candidateEntries.length === 0){
-    setHint('Geen resultaat uit crop — probeer volledige afbeelding OCR');
-    const full = await captureFullFrameOCR();
-    for(const cand of full){
-      const variants = generateVariants(cand);
+    const dataUrl = tmp.toDataURL('image/jpeg',0.6);
+    const res = await Tesseract.recognize(dataUrl, 'eng', {
+      tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 -',
+      tessedit_pageseg_mode: 7
+    });
+    const text = (res && res.data && res.data.text) ? res.data.text : '';
+    const tokens = extractPlateCandidates(text);
+    // increment candidate counters
+    let foundAny = false;
+    for(const t of tokens){
+      const cleaned = cleanAlnum(t);
+      if(!cleaned) continue;
+      foundAny = true;
+      // add variants too
+      const variants = generateVariants(cleaned);
       for(const v of variants){
-        const score = scoreCandidatePlate(v) + 1;
-        candidateEntries.push({plate:v, score});
+        const prev = lightCandidates.get(v) || 0;
+        lightCandidates.set(v, prev + 1);
       }
     }
-  }
-
-  // sort candidates
-  candidateEntries.sort((a,b) => b.score - a.score);
-
-  // dedupe and pick best-likely Dutch plate
-  const seen = new Set();
-  const finalists = [];
-  for(const e of candidateEntries){
-    if(seen.has(e.plate)) continue;
-    seen.add(e.plate);
-    finalists.push(e);
-  }
-
-  // pick top candidate that is likely Dutch; else null
-  let best = null;
-  for(const f of finalists){
-    if(isLikelyDutch(f.plate)){
-      best = f.plate;
-      break;
+    // check if any candidate reached confidence (repetition + heuristics)
+    if(foundAny){
+      // create ranked array
+      const arr = Array.from(lightCandidates.entries()).map(([k,v]) => ({k,v,score:scorePlate(k)}));
+      arr.sort((a,b) => (b.v*2 + b.score) - (a.v*2 + a.score));
+      const top = arr[0];
+      if(top && (top.v >= STABLE_REQUIRED || top.score >= 26)){
+        // accept as good candidate -> perform high-res capture and final pipeline
+        console.log('Auto-accept candidate', top);
+        await finalizeCaptureWithCandidate(top.k);
+      }
+    } else {
+      // gradually decay counters so false positives drop
+      for(const [k,v] of lightCandidates.entries()){
+        const nv = Math.max(0, v - 1);
+        if(nv===0) lightCandidates.delete(k); else lightCandidates.set(k, nv);
+      }
     }
+  } catch(e){
+    console.warn('light OCR error', e);
   }
-  // as fallback pick highest scored anyway
-  if(!best && finalists.length) best = finalists[0].plate;
-
-  // stop camera & show app
-  stopCamera();
-  showApp();
-
-  if(best){
-    setHint('Kenteken herkend: ' + best);
-    await fetchAndShowRDW(best);
-  } else {
-    showNoResult('Geen kenteken gevonden. Probeer opnieuw of vul handmatig in.');
-  }
-  captureInProgress = false;
 }
 
-/* Capture crop (plateBox region) and run multiple OCR preprocessing variants */
-async function captureOnceAndOCR(){
-  // crop to plateBox coordinates relative to video
-  const cropCanvas = cropToPlateBox();
-  if(!cropCanvas) return [];
+/* ========== Capture & full-res OCR pipeline ========== */
 
-  // build preprocessing variants (original, grayscale+contrast+binary, sharpen, upscaled)
+async function finalizeCaptureWithCandidate(candidateGuess){
+  if(captureInProgress) return;
+  captureInProgress = true;
+  setStatus('Bevestigen en hoge-res foto maken voor controle...');
+  // small delay for UX
+  await new Promise(r=>setTimeout(r, 220));
+  // do a high-res crop from video and run multiple heavy OCR passes
+  const crop = cropToPlateBoxCanvas();
+  if(!crop){ captureInProgress=false; return; }
+  // run multi-pass OCR on several preprocessed canvases (original, sharpen, binarize, upscale)
   const canvases = [];
-  canvases.push(cloneCanvas(cropCanvas));
-  canvases.push(upscaleCanvas(greyscaleContrastBinarize(cloneCanvas(cropCanvas)), 2));
-  canvases.push(upscaleCanvas(sharpenCanvas(cloneCanvas(cropCanvas)), 2));
-  canvases.push(upscaleCanvas(greyscaleContrastBinarize(sharpenCanvas(cloneCanvas(cropCanvas))), 3));
+  canvases.push(cloneCanvas(crop.canvas));                                   // original
+  canvases.push(greyscaleContrastBinarize(cloneCanvas(crop.canvas),1.1));     // binary-ish
+  canvases.push(sharpenCanvas(cloneCanvas(crop.canvas)));                     // sharpen
+  canvases.push(upscaleCanvas(cloneCanvas(crop.canvas),2));                   // upscale
+  canvases.push(upscaleCanvas(greyscaleContrastBinarize(cloneCanvas(crop.canvas),1.2),2));
 
-  const candidates = new Set();
+  const candidateScores = new Map(); // plate -> score
   for(const c of canvases){
-    try {
-      const dataUrl = c.toDataURL('image/jpeg', 0.9);
+    try{
+      const dataUrl = c.toDataURL('image/jpeg',0.9);
       const res = await Tesseract.recognize(dataUrl, 'eng', {
         tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 -',
         tessedit_pageseg_mode: 7
       });
-      const text = res && res.data && res.data.text ? res.data.text : '';
+      const text = (res && res.data && res.data.text) ? res.data.text : '';
       const tokens = extractPlateCandidates(text);
-      tokens.forEach(t => {
-        const cleaned = t.replace(/[^A-Z0-9]/g,'').toUpperCase();
-        if(cleaned) candidates.add(cleaned);
-      });
+      for(const t of tokens){
+        const cleaned = cleanAlnum(t);
+        if(!cleaned) continue;
+        const variants = generateVariants(cleaned);
+        for(const v of variants){
+          const prev = candidateScores.get(v) || 0;
+          candidateScores.set(v, prev + 1);
+        }
+      }
     } catch(err){
-      console.warn('OCR pass failed', err);
+      console.warn('heavy OCR pass failed', err);
     }
   }
-  return Array.from(candidates);
-}
 
-/* Full frame OCR fallback */
-async function captureFullFrameOCR(){
-  const canvas = document.createElement('canvas');
-  canvas.width = video.videoWidth; canvas.height = video.videoHeight;
-  const ctx = canvas.getContext('2d');
-  ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-  try {
-    const res = await Tesseract.recognize(canvas.toDataURL('image/jpeg',0.8), 'eng', {
-      tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 -',
-      tessedit_pageseg_mode: 3
-    });
-    return extractPlateCandidates(res.data ? res.data.text : '');
-  } catch(e){
-    return [];
+  // ensure candidateGuess is also considered
+  if(candidateGuess){
+    const g = cleanAlnum(candidateGuess);
+    const prev = candidateScores.get(g) || 0;
+    candidateScores.set(g, prev + 3);
   }
+
+  // rank candidates by combined heuristic (occurrence + scorePlate)
+  const ranked = Array.from(candidateScores.entries()).map(([k,v]) => ({plate:k,count:v,score: v*2 + scorePlate(k)}));
+  ranked.sort((a,b)=>b.score - a.score);
+
+  let chosen = null;
+  if(ranked.length){
+    // pick first that meets likely Dutch check or high score
+    for(const r of ranked){
+      if(isLikelyDutchPlate(r.plate) || r.score >= 30){
+        chosen = r.plate;
+        break;
+      }
+    }
+    if(!chosen) chosen = ranked[0].plate;
+  }
+
+  // STOP camera and show UI
+  stopCamera();
+  showApp();
+
+  if(!chosen){
+    // show manual fallback
+    showNoResult('Geen betrouwbaar kenteken gevonden.');
+    captureInProgress = false;
+    return;
+  }
+
+  // final normalization: format with optional dashes if length fits 6
+  const finalPlate = formatPlateDisplay(chosen);
+
+  setStatus('Kenteken herkend: ' + finalPlate);
+  // fetch RDW and render
+  await fetchAndRenderRDW(finalPlate);
+
+  captureInProgress = false;
 }
 
-/* ---- Canvas processing helpers ---- */
-function cropToPlateBox(){
+/* ========== Image processing helpers (canvas ops) ========== */
+
+function cropToPlateBoxCanvas(){
+  // compute plateBox relative to video element and map to underlying video pixels (object-fit:cover)
   const vb = video.getBoundingClientRect();
   const pb = plateBox.getBoundingClientRect();
   const vidW = video.videoWidth, vidH = video.videoHeight;
   if(!vidW || !vidH) return null;
-  // compute cover scaling
   const elW = vb.width, elH = vb.height;
-  const scale = Math.max(vidW / elW, vidH / elH);
-  const displayedWidth = vidW / scale, displayedHeight = vidH / scale;
-  const offsetX = (elW - displayedWidth) / 2, offsetY = (elH - displayedHeight) / 2;
+  const scale = Math.max(vidW/elW, vidH/elH); // cover
+  const displayedWidth = vidW/scale, displayedHeight = vidH/scale;
+  const offsetX = (elW - displayedWidth)/2, offsetY = (elH - displayedHeight)/2;
   const relX = pb.left - vb.left - offsetX;
   const relY = pb.top - vb.top - offsetY;
   const sx = Math.max(0, Math.round(relX * scale));
@@ -530,10 +513,10 @@ function cropToPlateBox(){
   const sw = Math.round(pb.width * scale);
   const sh = Math.round(pb.height * scale);
 
-  captureCanvas.width = sw; captureCanvas.height = sh;
-  const ctx = captureCanvas.getContext('2d');
+  capCanvas.width = sw; capCanvas.height = sh;
+  const ctx = capCanvas.getContext('2d');
   ctx.drawImage(video, sx, sy, sw, sh, 0, 0, sw, sh);
-  return captureCanvas;
+  return {canvas: capCanvas, width: sw, height: sh};
 }
 
 function cloneCanvas(src){
@@ -548,206 +531,249 @@ function upscaleCanvas(src, scale=2){
   const ctx = procCanvas.getContext('2d');
   ctx.imageSmoothingEnabled = true;
   ctx.imageSmoothingQuality = 'high';
-  ctx.drawImage(src,0,0,procCanvas.width,procCanvas.height);
+  ctx.drawImage(src, 0, 0, procCanvas.width, procCanvas.height);
   return procCanvas;
 }
 
 function sharpenCanvas(src){
-  // simple unsharp-ish approach: draw, then overlay difference; quick approx for demo
   procCanvas.width = src.width; procCanvas.height = src.height;
   const ctx = procCanvas.getContext('2d');
-  ctx.filter = 'contrast(115%) saturate(100%)';
+  ctx.filter = 'contrast(120%) saturate(100%)';
   ctx.drawImage(src,0,0);
   ctx.filter = 'none';
   return procCanvas;
 }
 
-function greyscaleContrastBinarize(src){
+function greyscaleContrastBinarize(src, contrast=1.05){
   procCanvas.width = src.width; procCanvas.height = src.height;
   const ctx = procCanvas.getContext('2d');
   ctx.drawImage(src,0,0);
   const img = ctx.getImageData(0,0,procCanvas.width,procCanvas.height);
   const d = img.data;
-  // compute simple local threshold using average brightness (fast)
-  let sum = 0;
+  let sum=0;
   for(let i=0;i<d.length;i+=4) sum += (d[i]*0.299 + d[i+1]*0.587 + d[i+2]*0.114);
-  const avg = sum / (d.length/4);
-  const threshold = Math.max(120, avg * 0.95);
+  const avg = sum/(d.length/4);
+  const threshold = Math.max(100, avg * 0.95);
   for(let i=0;i<d.length;i+=4){
     const gray = Math.round(d[i]*0.299 + d[i+1]*0.587 + d[i+2]*0.114);
-    const v = gray > threshold ? 255 : 0;
+    const v = (gray*contrast > threshold) ? 255 : 0;
     d[i]=d[i+1]=d[i+2]=v;
   }
   ctx.putImageData(img,0,0);
   return procCanvas;
 }
 
-/* ---- OCR text -> tokens extraction ---- */
+/* ========== OCR helpers ========== */
+
 function extractPlateCandidates(text){
   if(!text) return [];
   const cleaned = text.toUpperCase().replace(/[^A-Z0-9 \-\n]/g,' ');
   const tokens = cleaned.split(/[\s\n]+/).filter(Boolean);
   const candidates = tokens.map(t => t.replace(/[^A-Z0-9]/g,'')).filter(t => t.length >= 4 && t.length <= 8);
-  // try to merge adjacent tokens (AB 12 CD -> AB12CD)
-  const merged = [];
-  for(let i=0;i<tokens.length;i++){
-    const t = tokens[i].replace(/[^A-Z0-9]/g,'');
-    if(t.length >= 4 && t.length <= 8) merged.push(t);
-    if(i < tokens.length-1){
-      const t2 = tokens[i+1].replace(/[^A-Z0-9]/g,'');
-      const j = (t + t2);
-      if(j.length >=4 && j.length <=8) merged.push(j);
-    }
+  // merge adjacent tokens into combined patterns
+  for(let i=0;i<tokens.length-1;i++){
+    const t1 = tokens[i].replace(/[^A-Z0-9]/g,'');
+    const t2 = tokens[i+1].replace(/[^A-Z0-9]/g,'');
+    const j = t1+t2;
+    if(j.length>=4 && j.length<=8) candidates.push(j);
   }
-  return [...new Set([...candidates, ...merged])];
+  return Array.from(new Set(candidates));
 }
 
-/* ---- After best plate determined: RDW fetch + display ---- */
-async function fetchAndShowRDW(plate){
-  try {
-    // show loading UI
-    app.style.display = 'block';
-    resultArea.style.display = 'none';
-    noResult.style.display = 'none';
-    // fetch base
-    const baseArr = await lookupRDWBase(plate);
-    if(!baseArr || baseArr.length === 0){
-      showNoResult('Geen RDW-data gevonden voor ' + plate);
+function formatPlateDisplay(plate){
+  // If 6 characters, display as XX-00-XX style
+  const p = cleanAlnum(plate);
+  if(p.length===6) return p.slice(0,2)+'-'+p.slice(2,4)+'-'+p.slice(4);
+  return plate;
+}
+
+/* ========== RDW lookup & rendering ==========
+   - main dataset: m9d7-ebf2
+   - extras: sample datasets (8ys7-d773, vez5-84b4) - best-effort
+========================================== */
+
+async function lookupRDWBase(kent){
+  const p = cleanAlnum(kent);
+  if(!p) return [];
+  const url = `https://opendata.rdw.nl/resource/m9d7-ebf2.json?kenteken=${p}`;
+  const r = await fetch(url);
+  if(!r.ok) throw new Error('RDW basis fout: ' + r.status);
+  return r.json();
+}
+async function lookupRDWExtra1(kent){ // example: brandstof/vermogen table
+  const p = cleanAlnum(kent);
+  if(!p) return [];
+  try{
+    const r = await fetch(`https://opendata.rdw.nl/resource/8ys7-d773.json?kenteken=${p}`);
+    if(!r.ok) throw new Error('no extra1');
+    return r.json();
+  } catch(e){ return []; }
+}
+async function lookupRDWExtra2(kent){ // example: motor details table (best-effort)
+  const p = cleanAlnum(kent);
+  if(!p) return [];
+  try{
+    const r = await fetch(`https://opendata.rdw.nl/resource/vez5-84b4.json?kenteken=${p}`);
+    if(!r.ok) throw new Error('no extra2');
+    return r.json();
+  } catch(e){ return []; }
+}
+
+async function fetchAndRenderRDW(plate){
+  setStatus('RDW opvragen...');
+  try{
+    const base = await lookupRDWBase(plate);
+    if(!base || base.length===0){
+      showNoResult('Geen RDW-gegevens gevonden voor '+plate);
       return;
     }
-    const data = baseArr[0];
-    // try extra datasets (best effort)
-    const extraV = await lookupRDWExtraVermogen(plate);
-    const extraT = await lookupRDWExtraTorque(plate);
+    const data = base[0];
+    // try extras (best-effort, may be empty)
+    const extra1 = await lookupRDWExtra1(plate);
+    const extra2 = await lookupRDWExtra2(plate);
 
-    displayResult(plate, data, extraV[0] || null, extraT[0] || null);
+    renderResult(plate, data, (extra1 && extra1[0]) ? extra1[0] : null, (extra2 && extra2[0]) ? extra2[0] : null);
   } catch(err){
     console.error('RDW fetch error', err);
-    showNoResult('Fout bij ophalen RDW-data: ' + (err.message || err));
+    showNoResult('Fout bij RDW-opvraag: ' + (err.message || err));
   }
 }
 
-function displayResult(kenteken, data, extraV, extraT){
-  noResult.style.display = 'none';
-  resultArea.style.display = 'block';
+function renderResult(plate, data, extra1, extra2){
+  // primary
+  resPlate.innerText = formatPlateDisplay(plate);
+  const merk = getFirst(data,['merk']) || '';
+  const model = getFirst(data,['handelsbenaming','uitvoering']) || '';
+  resBrandModel.innerText = [merk,model].filter(Boolean).join(' • ');
+  resFirst.innerText = formatDate(getFirst(data,['datum_eerste_toelating','datum_eerste_toelating_in_nederland']));
 
-  // Primary fields
-  rKenteken.innerText = kenteken;
-  const merk = getFirst(data, ['merk']) || '';
-  const model = getFirst(data, ['handelsbenaming','uitvoering']) || '';
-  rMerkModel.innerText = [merk,model].filter(Boolean).join(' • ');
+  // price
+  const priceRaw = getFirst(data,['catalogusprijs','catalogusprijs_euro','catalogus_prijs']);
+  if(priceRaw && String(priceRaw).trim()!==''){
+    const n = Number(String(priceRaw).replace(/[^\d]/g,''));
+    resPrice.innerText = isNaN(n) ? String(priceRaw) : ('€ ' + n.toLocaleString('nl-NL'));
+  } else resPrice.innerText = 'Onbekend';
 
-  rEerste.innerText = formatDate(getFirst(data,['datum_eerste_toelating','datum_eerste_toelating_in_nederland']));
-
-  // Price (RDW doesn't keep retail price reliably) -> try catalogusprijs field else unknown
-  const prijsRaw = getFirst(data, ['catalogusprijs','catalogusprijs_euro','catalogus_prijs']);
-  if(prijsRaw && String(prijsRaw).trim() !== ''){
-    const num = Number(String(prijsRaw).replace(/[^\d]/g,''));
-    rPrijs.innerText = isNaN(num) ? String(prijsRaw) : ('€ ' + num.toLocaleString('nl-NL'));
-  } else {
-    rPrijs.innerText = 'Onbekend';
+  // power: check extras first, then base
+  let powerVal = null;
+  if(extra1) powerVal = getFirst(extra1,['vermogen_kW','vermogen_pk','vermogen']);
+  if(!powerVal) powerVal = getFirst(data, ['vermogen','vermogen_kW','vermogen_pk']);
+  let powerText = '—'; let powerExtra = '';
+  if(powerVal){
+    const num = Number(String(powerVal).replace(/[^\d\.-]/g,''));
+    if(!isNaN(num)){
+      if(num > 200){ powerText = `${num} pk`; powerExtra = `${Math.round(num/1.35962*10)/10} kW`; }
+      else { powerText = `${num} kW (${Math.round(num*1.35962*10)/10} pk)`; }
+    } else powerText = String(powerVal);
   }
+  resPower.innerText = powerText;
+  resPowerExtra.innerText = powerExtra;
 
-  // Vermogen: try extraV, then some common fields in base data
-  let vermogenVal = null;
-  if(extraV){
-    vermogenVal = getFirst(extraV, ['vermogen_kW','vermogen_pk','vermogen']);
-  }
-  if(!vermogenVal) vermogenVal = getFirst(data, ['vermogen_kW','vermogen','vermogen_pk','vermogen_kw','vermogen_pk']);
-  let vermogenText = '—';
-  let vermogenExtra = '';
-  if(vermogenVal){
-    const n = Number(String(vermogenVal).replace(/[^0-9\.-]/g,''));
-    if(!isNaN(n)){
-      // decide if n is kW or pk heuristically
-      if(n > 200){ // likely pk
-        const kw = Math.round((n / 1.35962) * 10) / 10;
-        vermogenText = `${n} pk`;
-        vermogenExtra = `${kw} kW`;
-      } else {
-        const kw = n;
-        const pk = Math.round((kw * 1.35962) * 10) / 10;
-        vermogenText = `${kw} kW (${pk} pk)`;
-      }
-    } else {
-      vermogenText = String(vermogenVal);
-    }
-  }
-  rVermogen.innerText = vermogenText;
-  rVermogenExtra.innerText = vermogenExtra;
+  // torque — try extra2 first then base
+  let torque = null;
+  if(extra2) torque = getFirst(extra2,['koppel','koppel_nm','maximum_koppel','max_koppel']);
+  if(!torque) torque = getFirst(data, ['koppel','koppel_nm','maximale_koppel']);
+  resTorque.innerText = torque ? String(torque) : '—';
 
-  // Torque
-  let torqueVal = null;
-  if(extraT) torqueVal = getFirst(extraT, ['koppel','koppel_nm','maximum_koppel','max_torque','koppel_moment']);
-  if(!torqueVal) torqueVal = getFirst(data, ['koppel','koppel_nm','maximale_koppel']);
-  rTorque.innerText = torqueVal ? String(torqueVal) : '—';
+  // mass
+  const mass = getFirst(data,['massa_rijklaar','massa_ledig_voertuig','toegestane_maximum_massa_voertuig','massa']);
+  resMass.innerText = mass ? String(mass)+' kg' : '—';
 
-  // Weight
-  const massa = getFirst(data, ['massa_rijklaar','massa_ledig_voertuig','toegestane_maximum_massa_voertuig','massa']);
-  rGewicht.innerText = massa ? (String(massa).replace(/\s+$/,'') + ' kg') : '—';
-
-  // Extra field list (ordered, then rest)
-  rExtra.innerHTML = '';
+  // extras
+  extraRows.innerHTML = '';
   const fieldMap = [
     ['Brandstof', ['brandstof_omschrijving','brandstof']],
     ['Kleur', ['eerste_kleur','tweede_kleur']],
-    ['Aantal zitplaatsen', ['aantal_zitplaatsen']],
-    ['Aantal deuren', ['aantal_deuren']],
-    ['Inrichting', ['inrichting']],
-    ['Uitvoering', ['uitvoering']],
-    ['Handelsbenaming', ['handelsbenaming']],
+    ['Zitplaatsen', ['aantal_zitplaatsen']],
+    ['Deuren', ['aantal_deuren']],
     ['APK vervaldatum', ['vervaldatum_apk']],
-    ['Chassisnummer (VIN)', ['chassisnummer','voertuig_identificatienummer']],
-    ['Trekgewicht', ['max_trekgewicht','maximum_trekgewicht']],
-    ['CO₂ (g/km)', ['co2_uitstoot','co2']],
-    ['Energielabel', ['energielabel']]
+    ['VIN / chassis', ['chassisnummer','voertuig_identificatienummer']],
+    ['Trekgewicht', ['max_trekgewicht','max_trekgewicht_massa']],
+    ['CO₂', ['co2_uitstoot','co2']]
   ];
   for(const [label, keys] of fieldMap){
     const v = getFirst(data, keys);
-    if(!v) continue;
-    const row = document.createElement('div');
-    row.className = 'row';
-    row.innerHTML = `<div style="color:var(--muted)">${label}</div><div style="font-weight:700">${v}</div>`;
-    rExtra.appendChild(row);
+    if(v){
+      const div = document.createElement('div');
+      div.className='row';
+      div.innerHTML = `<div class="smallMuted">${label}</div><div style="font-weight:900">${v}</div>`;
+      extraRows.appendChild(div);
+    }
   }
 
-  // Put raw JSON into raw pre
-  rawPre.textContent = JSON.stringify({base:data, extraV:extraV||null, extraT:extraT||null}, null, 2);
-  rawBlock.style.display = 'none';
-}
-
-/* ---- UI helpers ---- */
-function showApp(){ app.style.display = 'block'; document.getElementById('app').scrollIntoView({behavior:'smooth'}); }
-function showNoResult(msg){
-  resultArea.style.display = 'none';
-  noResult.style.display = 'block';
-  manualMessage.innerText = msg || '';
+  rawJson.style.display = 'none';
+  rawJson.textContent = JSON.stringify({base:data, extra1:extra1, extra2:extra2}, null, 2);
+  resultCard.style.display = 'block';
+  noResult.style.display = 'none';
   app.style.display = 'block';
+  setStatus('Klaar');
 }
 
-/* ---- Events ---- */
-retryBtn.addEventListener('click', ()=> { resultArea.style.display = 'none'; rawPre.textContent = '-'; startCameraAuto(); });
-manualBtn.addEventListener('click', ()=> { resultArea.style.display = 'none'; showNoResult(''); });
-manualSearch.addEventListener('click', async ()=> {
-  const rawPlate = manualInput.value || '';
-  const plate = cleanPlateRaw(rawPlate);
-  if(!plate){ manualMessage.innerText = 'Voer een kenteken in'; return; }
-  manualMessage.innerText = 'Zoeken...';
-  try {
-    const arr = await lookupRDWBase(plate);
-    if(arr && arr.length > 0) displayResult(plate, arr[0], null, null);
-    else manualMessage.innerText = 'Geen gegevens gevonden voor ' + plate;
-  } catch(err){ manualMessage.innerText = 'Fout bij RDW: ' + (err.message||err); }
+/* ========== UI: show app / fallback ========== */
+function showApp(){
+  app.style.display = 'block';
+  cameraRoot.style.display = 'none';
+}
+function showNoResult(msg){
+  resultCard.style.display = 'none';
+  noResult.style.display = 'block';
+  manualMsg.innerText = msg || '';
+  app.style.display = 'block';
+  setStatus('klaar');
+}
+
+/* ========== Events ========== */
+btnForce.addEventListener('click', async ()=> {
+  // user-forced capture: trigger full pipeline using current candidate list
+  // find top candidate from lightCandidates
+  const arr = Array.from(lightCandidates.entries()).map(([k,v])=>({k,v,score:scorePlate(k)}));
+  arr.sort((a,b)=> (b.v*2 + b.score) - (a.v*2 + a.score));
+  const top = arr[0];
+  if(top && isLikelyDutchPlate(top.k)){
+    await finalizeCaptureWithCandidate(top.k);
+  } else {
+    // still attempt capture if user forces
+    await finalizeCaptureWithCandidate(top ? top.k : null);
+  }
 });
-manualRetry.addEventListener('click', ()=> { noResult.style.display = 'none'; startCameraAuto(); });
-toggleRaw.addEventListener('click', ()=> { rawBlock.style.display = rawBlock.style.display === 'none' ? 'block' : 'none'; });
 
-/* ---- Utility: choose best from list (not used directly here) ---- */
-function uniq(arr){ return Array.from(new Set(arr)); }
+btnManual.addEventListener('click', ()=>{
+  stopCamera();
+  showApp();
+  showNoResult('');
+});
 
-/* ---- Init on load ---- */
-window.addEventListener('load', ()=> { startCameraAuto(); });
+btnRetry.addEventListener('click', ()=>{
+  // restart camera
+  resultCard.style.display = 'none';
+  rawJson.textContent = '-';
+  startCamera();
+});
 
+btnManual2.addEventListener('click', ()=>{ resultCard.style.display='none'; showNoResult(''); });
+
+btnRaw.addEventListener('click', ()=>{ rawJson.style.display = rawJson.style.display==='none' ? 'block' : 'none'; });
+
+manualSearchBtn.addEventListener('click', async ()=>{
+  const p = manualPlateInput.value.trim();
+  if(!p){ manualMsg.innerText = 'Voer een kenteken in'; return; }
+  manualMsg.innerText = 'Zoeken...';
+  try{
+    await fetchAndRenderRDW(p);
+    manualMsg.innerText = '';
+  } catch(e){ manualMsg.innerText = 'Fout: ' + (e.message || e); }
+});
+
+manualRetryBtn.addEventListener('click', ()=>{
+  noResult.style.display = 'none';
+  manualMsg.innerText = '';
+  startCamera();
+});
+
+/* ========== bootstrap ========== */
+window.addEventListener('load', ()=> {
+  startCamera();
+});
 </script>
 </body>
 </html>
